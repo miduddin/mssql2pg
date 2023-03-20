@@ -1,0 +1,7 @@
+tmp/
+
+mssql2pg.db
+mssql2pg_test.db
+
+mssql2pg.json
+mssql2pg_test.json

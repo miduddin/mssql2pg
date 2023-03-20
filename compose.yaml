@@ -1,0 +1,25 @@
+version: "3.9"
+services:
+
+  mssql:
+    image: mcr.microsoft.com/mssql/server:2017-latest
+    environment:
+      ACCEPT_EULA: "Y"
+      MSSQL_SA_PASSWORD: Passw0rd
+    ports:
+      - 1433:1433
+    volumes:
+      - mssql:/var/opt/mssql
+
+  pg:
+    image: docker.io/postgres:13
+    ports:
+      - 5432:5432
+    environment:
+      POSTGRES_PASSWORD: postgres
+    volumes:
+      - pg:/var/lib/postgresql/data
+
+volumes:
+  mssql:
+  pg:
