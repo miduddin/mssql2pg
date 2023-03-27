@@ -129,8 +129,11 @@ func (db *destinationDB) insertRows(ctx context.Context, t tableInfo, input <-ch
 		select {
 		case rd, ok := <-input:
 			if !ok {
-				if _, err := stmt.ExecContext(ctx); err != nil {
-					return fmt.Errorf("flush copy: %w", err)
+				// stmt can be nil when input is empty.
+				if stmt != nil {
+					if _, err := stmt.ExecContext(ctx); err != nil {
+						return fmt.Errorf("flush copy: %w", err)
+					}
 				}
 
 				if err := tx.Commit(); err != nil {

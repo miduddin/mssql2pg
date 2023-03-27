@@ -213,6 +213,21 @@ func Test_destinationDB_insertRows(t *testing.T) {
 		cancel()
 		<-wait
 	})
+
+	t.Run("only truncates table when input is empty", func(t *testing.T) {
+		initDB(t)
+		dstDB.db.MustExec("INSERT INTO test.some_table (id1, id2) VALUES ('1a2b3c4d-5a6b-7c8d-9910-111213141516', 13)")
+		ch := make(chan rowdata, 3)
+		close(ch)
+
+		err := dstDB.insertRows(context.Background(), table, ch)
+
+		assert.NoError(t, err)
+		assert.Equal(t,
+			[]rowdata{},
+			getAllData(t, dstDB.db, table, "id1 ASC, id2 ASC"),
+		)
+	})
 }
 
 func Test_destinationDB_writeTableChanges(t *testing.T) {
