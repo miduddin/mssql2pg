@@ -20,6 +20,7 @@ type config struct {
 	MetaDatabasePath string `json:"metaDatabasePath"`
 
 	TablesToPutLast []string `json:"tablesToPutLast"`
+	ExcludeTables   []string `json:"excludeTables"`
 }
 
 func loadConfig(configPath string) (config, error) {

@@ -29,7 +29,7 @@ func newSourceDB(user, pass, host, dbname string) (*sourceDB, error) {
 	return &sourceDB{db}, nil
 }
 
-func (db *sourceDB) getTables(tablesToPutLast []string) ([]tableInfo, error) {
+func (db *sourceDB) getTables(tablesToPutLast, excludes []string) ([]tableInfo, error) {
 	// From https://stackoverflow.com/a/7892349
 	rows, err := db.db.Queryx(
 		`SELECT
@@ -59,6 +59,12 @@ func (db *sourceDB) getTables(tablesToPutLast []string) ([]tableInfo, error) {
 		return nil, fmt.Errorf("sql query: %w", err)
 	}
 
+	exts := make([]tableInfo, len(excludes))
+	for i, s := range excludes {
+		ss := strings.Split(s, ".")
+		exts[i] = tableInfo{schema: ss[0], name: ss[1]}
+	}
+
 	tables := []tableInfo{}
 	for rows.Next() {
 		var t tableInfo
@@ -66,7 +72,16 @@ func (db *sourceDB) getTables(tablesToPutLast []string) ([]tableInfo, error) {
 			return nil, fmt.Errorf("scan row: %w", err)
 		}
 
-		tables = append(tables, t)
+		excluded := false
+		for _, ext := range exts {
+			if t.schema == ext.schema && t.name == ext.name {
+				excluded = true
+				break
+			}
+		}
+		if !excluded {
+			tables = append(tables, t)
+		}
 	}
 
 	var firstTables, lastTables []tableInfo

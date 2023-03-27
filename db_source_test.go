@@ -57,7 +57,7 @@ func Test_sourceDB_getTables(t *testing.T) {
 	t.Run("returns list of tables ordered by size asc", func(t *testing.T) {
 		initDB(t)
 
-		tables, err := srcDB.getTables(nil)
+		tables, err := srcDB.getTables(nil, nil)
 
 		assert.NoError(t, err)
 		assert.Equal(t,
@@ -73,7 +73,7 @@ func Test_sourceDB_getTables(t *testing.T) {
 	t.Run("able to put tables to the end of list", func(t *testing.T) {
 		initDB(t)
 
-		tables, err := srcDB.getTables([]string{"schema1.table1", "schema2.table3"})
+		tables, err := srcDB.getTables([]string{"schema1.table1", "schema2.table3"}, nil)
 
 		assert.NoError(t, err)
 		assert.Equal(t,
@@ -81,6 +81,24 @@ func Test_sourceDB_getTables(t *testing.T) {
 				{schema: "schema2", name: "table2"},
 				{schema: "schema1", name: "table1"},
 				{schema: "schema2", name: "table3"},
+			},
+			tables,
+		)
+	})
+
+	t.Run("able to exclude tables", func(t *testing.T) {
+		initDB(t)
+		srcDB.db.MustExec("CREATE TABLE schema1.table4 (id INT)")
+		defer srcDB.db.MustExec("DROP TABLE schema1.table4")
+
+		tables, err := srcDB.getTables(nil, []string{"schema1.table4"})
+
+		assert.NoError(t, err)
+		assert.Equal(t,
+			[]tableInfo{
+				{schema: "schema2", name: "table3"},
+				{schema: "schema1", name: "table1"},
+				{schema: "schema2", name: "table2"},
 			},
 			tables,
 		)

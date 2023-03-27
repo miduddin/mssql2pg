@@ -16,17 +16,19 @@ type cmdReplicate struct {
 	metaDB *metaDB
 
 	tablesToPutLast []string
+	excludeTables   []string
 
 	changeTrackingCopyMinInterval time.Duration
 }
 
-func newCmdReplicate(srcDB *sourceDB, dstDB *destinationDB, metaDB *metaDB, tablesToPutLast []string) *cmdReplicate {
+func newCmdReplicate(srcDB *sourceDB, dstDB *destinationDB, metaDB *metaDB, tablesToPutLast, excludeTables []string) *cmdReplicate {
 	return &cmdReplicate{
 		srcDB:  srcDB,
 		dstDB:  dstDB,
 		metaDB: metaDB,
 
 		tablesToPutLast: tablesToPutLast,
+		excludeTables:   excludeTables,
 
 		changeTrackingCopyMinInterval: 1 * time.Minute,
 	}
@@ -54,7 +56,7 @@ func (cmd *cmdReplicate) start(ctx context.Context) error {
 		close(wait)
 	}()
 
-	tables, err := cmd.srcDB.getTables(cmd.tablesToPutLast)
+	tables, err := cmd.srcDB.getTables(cmd.tablesToPutLast, cmd.excludeTables)
 	if err != nil {
 		return fmt.Errorf("list src tables: %w", err)
 	}
