@@ -56,8 +56,13 @@ func (db *destinationDB) getForeignKeys() ([]dstForeignKey, error) {
 		}
 
 		ss := strings.Split(schemaTable, ".")
-		fk.t.schema = ss[0]
-		fk.t.name = ss[1]
+		if len(ss) == 1 {
+			fk.t.schema = "public"
+			fk.t.name = ss[0]
+		} else {
+			fk.t.schema = ss[0]
+			fk.t.name = ss[1]
+		}
 
 		ret = append(ret, fk)
 	}

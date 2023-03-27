@@ -24,11 +24,19 @@ func Test_destinationDB_getForeignKeys(t *testing.T) {
 			CREATE TABLE test.table3 (
 				id        INT PRIMARY KEY,
 				table1_id INT CONSTRAINT table3_table1_fk REFERENCES test.table1(id)
-			)
+			);
+
+			CREATE TABLE table4 (
+				id        INT PRIMARY KEY,
+				table1_id INT CONSTRAINT table4_table1_fk REFERENCES test.table1(id)
+			);
 		`)
 
 		t.Cleanup(func() {
-			dstDB.db.MustExec("DROP SCHEMA test CASCADE")
+			dstDB.db.MustExec(`
+				DROP TABLE table4;
+				DROP SCHEMA test CASCADE;
+			`)
 		})
 	}
 
@@ -48,6 +56,11 @@ func Test_destinationDB_getForeignKeys(t *testing.T) {
 				{
 					t:          tableInfo{schema: "test", name: "table3"},
 					name:       "table3_table1_fk",
+					definition: "FOREIGN KEY (table1_id) REFERENCES test.table1(id)",
+				},
+				{
+					t:          tableInfo{schema: "public", name: "table4"},
+					name:       "table4_table1_fk",
 					definition: "FOREIGN KEY (table1_id) REFERENCES test.table1(id)",
 				},
 			},
