@@ -190,6 +190,7 @@ func (db *sourceDB) readRows(ctx context.Context, t tableInfo, output chan<- row
 		progressbar.OptionThrottle(500*time.Millisecond),
 		progressbar.OptionShowCount(),
 		progressbar.OptionShowIts(),
+		progressbar.OptionSetItsString("rows"),
 		progressbar.OptionOnCompletion(func() {
 			fmt.Fprint(os.Stderr, "\n")
 		}),
