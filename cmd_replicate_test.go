@@ -523,7 +523,7 @@ func Test_cmdReplicate_copyChangeTracking(t *testing.T) {
 		go func() {
 			err := cmd.copyChangeTracking(ctx, ch)
 
-			assert.EqualError(t, err, "change tracking replication aborted, reason: context canceled")
+			assert.EqualError(t, err, "context canceled")
 			close(wait)
 		}()
 
@@ -636,7 +636,7 @@ func Test_cmdReplicate_copyChangeTracking(t *testing.T) {
 		go func() {
 			err := cmd.copyChangeTracking(ctx, ch)
 
-			assert.EqualError(t, err, "change tracking replication aborted, reason: context canceled")
+			assert.EqualError(t, err, "context canceled")
 			close(wait)
 		}()
 

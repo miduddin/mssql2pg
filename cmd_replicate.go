@@ -4,10 +4,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/rs/zerolog/log"
 )
 
 type cmdReplicate struct {
@@ -53,7 +54,7 @@ func (cmd *cmdReplicate) start(ctx context.Context) error {
 
 	go func() {
 		if err := cmd.copyChangeTracking(ctCtx, ctQueue); err != nil {
-			cmd.printLog(tableInfo{}, "copy change tracking aborted, reason: "+err.Error())
+			log.Err(err).Msg("Change tracking copy aborted.")
 		}
 		close(wait)
 	}()
@@ -81,6 +82,7 @@ func (cmd *cmdReplicate) start(ctx context.Context) error {
 			return fmt.Errorf("initial table copy: %w", err)
 		}
 
+		log.Info().Msgf("[%s] Initial table copy complete, tracking changes in background...", t)
 		ctQueue <- t
 	}
 
@@ -125,18 +127,22 @@ type tableInfo struct {
 	name   string
 }
 
-func (cmd *cmdReplicate) copyInitial(ctx context.Context, t tableInfo) error {
-	cmd.printLog(t, "Starting initial table copy...")
+func (t tableInfo) String() string {
+	return t.schema + "." + t.name
+}
 
+func (cmd *cmdReplicate) copyInitial(ctx context.Context, t tableInfo) error {
 	done, err := cmd.metaDB.getInitialCopyProgress(t)
 	if err != nil {
 		return fmt.Errorf("get last initial copy progress: %w", err)
 	}
 
 	if done {
-		cmd.printLog(t, "Initial table copy is already done, skipping.")
+		log.Info().Msgf("[%s] Initial table copy already done.", t)
 		return nil
 	}
+
+	log.Info().Msgf("[%s] Starting initial table copy...", t)
 
 	if err := cmd.saveAndDropDstIndexes(t); err != nil {
 		return fmt.Errorf("save and drop dst indexes: %w", err)
@@ -174,6 +180,7 @@ func (cmd *cmdReplicate) copyInitial(ctx context.Context, t tableInfo) error {
 		return fmt.Errorf("read/write data: %w", err)
 	}
 
+	log.Info().Msgf("[%s] Rebuilding indexes...", t)
 	if err := cmd.restoreDstIndexes(ctx, t); err != nil {
 		return fmt.Errorf("restore dst indexes: %w", err)
 	}
@@ -182,7 +189,6 @@ func (cmd *cmdReplicate) copyInitial(ctx context.Context, t tableInfo) error {
 		return fmt.Errorf("mark initial copy done: %w", err)
 	}
 
-	cmd.printLog(t, "Initial table copy completed.")
 	return nil
 }
 
@@ -227,13 +233,13 @@ func (cmd *cmdReplicate) copyChangeTracking(ctx context.Context, queue chan tabl
 			nr, nw, err := cmd.copyCurrentChangeTracking(ctx, table)
 
 			if errors.Is(err, errInvalidLastSyncVersion) {
-				cmd.printLog(table, "Aborting change tracking copy because of invalid last sync version.")
+				log.Error().Msgf("[%s] Aborting change tracking copy (invalid last sync version).", table)
 				continue
 			} else if err != nil {
-				cmd.printLog(table, "Copy change tracking failed: "+err.Error())
+				log.Err(err).Msgf("[%s] Copy change tracking failed.", table)
 			} else {
-				if cmd.allInitialCopyDone {
-					cmd.printLog(table, fmt.Sprintf("Copied change tracking data, rows read: %d, rows written: %d", nr, nw))
+				if cmd.allInitialCopyDone && (nr > 0 || nw > 0) {
+					log.Info().Msgf("[%s] Copied change tracking data, read: %d, written: %d", table, nr, nw)
 				}
 			}
 
@@ -246,7 +252,7 @@ func (cmd *cmdReplicate) copyChangeTracking(ctx context.Context, queue chan tabl
 			}()
 
 		case <-ctx.Done():
-			return fmt.Errorf("change tracking replication aborted, reason: %w", ctx.Err())
+			return ctx.Err()
 		}
 	}
 }
@@ -336,8 +342,4 @@ func (cmd *cmdReplicate) dstTable(srcTable tableInfo) tableInfo {
 	}
 
 	return ret
-}
-
-func (cmd *cmdReplicate) printLog(t tableInfo, msg string) {
-	log.Printf("[%s.%s] %s", t.schema, t.name, msg)
 }

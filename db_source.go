@@ -5,14 +5,13 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"log"
-	"os"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/jmoiron/sqlx"
 	mssql "github.com/microsoft/go-mssqldb"
+	"github.com/rs/zerolog/log"
 	"github.com/schollz/progressbar/v3"
 )
 
@@ -184,21 +183,11 @@ func (db *sourceDB) readRows(ctx context.Context, t tableInfo, output chan<- row
 	count, _ := db.getRowCount(t)
 
 	// From progressbar.Default()
-	bar := progressbar.NewOptions64(
-		count,
-		progressbar.OptionSetDescription(""),
-		progressbar.OptionSetWriter(os.Stderr),
-		progressbar.OptionSetWidth(10),
+	bar := progressbar.NewOptions64(count,
 		progressbar.OptionThrottle(500*time.Millisecond),
 		progressbar.OptionShowCount(),
 		progressbar.OptionShowIts(),
 		progressbar.OptionSetItsString("rows"),
-		progressbar.OptionOnCompletion(func() {
-			fmt.Fprint(os.Stderr, "\n")
-		}),
-		progressbar.OptionSpinnerType(14),
-		progressbar.OptionFullWidth(),
-		progressbar.OptionSetRenderBlankState(true),
 	)
 
 	for rows.Next() {
@@ -244,7 +233,7 @@ func (db *sourceDB) fixValueByType(v any, ct *sql.ColumnType) any {
 	case "TEXT":
 		v, _ := v.(string)
 		if strings.Contains(v, "\x00") {
-			log.Printf("Warning: removed NULL characters in column '%s'", ct.Name())
+			log.Warn().Msgf("Removed null characters in column '%s'", ct.Name())
 		}
 		return strings.ReplaceAll(v, "\x00", "")
 	default:

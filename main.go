@@ -3,11 +3,19 @@ package main
 import (
 	"context"
 	"fmt"
-	"log"
 	"os"
 	"os/signal"
 	"syscall"
+
+	"github.com/rs/zerolog"
+	"github.com/rs/zerolog/log"
 )
+
+func init() {
+	log.Logger = log.Output(zerolog.NewConsoleWriter(func(w *zerolog.ConsoleWriter) {
+		w.TimeFormat = "Jan 2, 15:04 MST"
+	}))
+}
 
 func main() {
 	if len(os.Args) < 2 {
@@ -21,10 +29,10 @@ func main() {
 	}
 
 	cfg, err := loadConfig("mssql2pg.json")
-	panicIfErr(err)
+	exitIfErr(err)
 
 	srcDB, dstDB, metaDB, err := openDatabases(cfg)
-	panicIfErr(err)
+	exitIfErr(err)
 
 	switch os.Args[1] {
 	case "replicate":
@@ -33,12 +41,12 @@ func main() {
 		ctx, cancel := context.WithCancel(context.Background())
 
 		go func() {
-			log.Printf("Received signal %v, stopping process...", <-sigs)
+			log.Info().Msgf("Received signal %v, stopping process...", <-sigs)
 			cancel()
 		}()
 
 		cmd := newCmdReplicate(srcDB, dstDB, metaDB, cfg.TablesToPutLast, cfg.ExcludeTables)
-		log.Print(cmd.start(ctx))
+		log.Err(cmd.start(ctx)).Msg("Done.")
 
 	case "restore_fks":
 		fr := cmdRestoreFKs{
@@ -46,7 +54,7 @@ func main() {
 			metaDB: metaDB,
 		}
 
-		log.Print(fr.start())
+		log.Err(fr.start()).Msg("Done.")
 
 	default:
 		help()
@@ -97,8 +105,8 @@ Subcommands:
 	`)
 }
 
-func panicIfErr(err error) {
+func exitIfErr(err error) {
 	if err != nil {
-		panic(err)
+		log.Fatal().Msg(err.Error())
 	}
 }
