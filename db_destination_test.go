@@ -403,9 +403,10 @@ func Test_destinationDB_insertRows(t *testing.T) {
 	t.Run("able to process large amount of input in batch", func(t *testing.T) {
 		initDB(t)
 		dstDB.db.MustExec(`CREATE TABLE test.more_table(id INT)`)
+		dstDB.insertBatchSize = 100
 		ch := make(chan rowdata)
 		go func() {
-			for i := 0; i < copyBatchSize+100; i++ {
+			for i := 0; i < 212; i++ {
 				ch <- rowdata{"id": i + 1}
 			}
 			close(ch)
@@ -416,7 +417,7 @@ func Test_destinationDB_insertRows(t *testing.T) {
 		assert.NoError(t, err)
 
 		data := getAllData(t, dstDB.db, tableInfo{schema: "test", name: "more_table"}, "id")
-		assert.Len(t, data, copyBatchSize+100)
+		assert.Len(t, data, 212)
 		for i, r := range data {
 			assert.Equal(t, rowdata{"id": int64(i + 1)}, r)
 		}

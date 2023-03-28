@@ -12,7 +12,8 @@ import (
 )
 
 type destinationDB struct {
-	db *sqlx.DB
+	db              *sqlx.DB
+	insertBatchSize int
 }
 
 func newDestinationDB(user, pass, host, dbname string) (*destinationDB, error) {
@@ -25,7 +26,7 @@ func newDestinationDB(user, pass, host, dbname string) (*destinationDB, error) {
 		return nil, fmt.Errorf("open dst db: %w", err)
 	}
 
-	return &destinationDB{db}, nil
+	return &destinationDB{db: db, insertBatchSize: 1_000_000}, nil
 }
 
 type dstForeignKey struct {
@@ -166,8 +167,6 @@ func (db *destinationDB) createIndexes(ctx context.Context, ixs []dstIndex) erro
 	return nil
 }
 
-const copyBatchSize = 1_000_000
-
 func (db *destinationDB) insertRows(ctx context.Context, t tableInfo, input <-chan rowdata) error {
 	_, err := db.db.Exec(fmt.Sprintf(`TRUNCATE TABLE "%s"."%s"`, t.schema, t.name))
 	if err != nil {
@@ -187,7 +186,7 @@ func (db *destinationDB) insertRows(ctx context.Context, t tableInfo, input <-ch
 		case rd, ok := <-input:
 			count++
 
-			if !ok || count == copyBatchSize {
+			if !ok || count == db.insertBatchSize {
 				// stmt can be nil when input is empty.
 				if stmt != nil {
 					if _, err := stmt.ExecContext(ctx); err != nil {

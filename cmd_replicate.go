@@ -138,17 +138,8 @@ func (cmd *cmdReplicate) copyInitial(ctx context.Context, t tableInfo) error {
 		return nil
 	}
 
-	ixs, err := cmd.dstDB.getIndexes(t)
-	if err != nil {
-		return fmt.Errorf("get indexes: %w", err)
-	}
-
-	if err := cmd.metaDB.saveDstIndexes(ixs); err != nil {
-		return fmt.Errorf("save index: %w", err)
-	}
-
-	if err := cmd.dstDB.dropIndexes(ixs); err != nil {
-		return fmt.Errorf("drop indexes: %w", err)
+	if err := cmd.saveAndDropDstIndexes(t); err != nil {
+		return fmt.Errorf("save and drop dst indexes: %w", err)
 	}
 
 	var (
@@ -183,12 +174,8 @@ func (cmd *cmdReplicate) copyInitial(ctx context.Context, t tableInfo) error {
 		return fmt.Errorf("read/write data: %w", err)
 	}
 
-	if err := cmd.dstDB.createIndexes(ctx, ixs); err != nil {
-		return fmt.Errorf("restore dst index: %w", err)
-	}
-
-	if err := cmd.metaDB.deleteDstIndexes(t); err != nil {
-		return fmt.Errorf("delete saved indexse in meta DB: %w", err)
+	if err := cmd.restoreDstIndexes(ctx, t); err != nil {
+		return fmt.Errorf("restore dst indexes: %w", err)
 	}
 
 	if err := cmd.metaDB.markInitialCopyDone(t); err != nil {
@@ -196,6 +183,40 @@ func (cmd *cmdReplicate) copyInitial(ctx context.Context, t tableInfo) error {
 	}
 
 	cmd.printLog(t, "Initial table copy completed.")
+	return nil
+}
+
+func (cmd *cmdReplicate) saveAndDropDstIndexes(t tableInfo) error {
+	ixs, err := cmd.dstDB.getIndexes(t)
+	if err != nil {
+		return fmt.Errorf("get indexes: %w", err)
+	}
+
+	if err := cmd.metaDB.saveDstIndexes(ixs); err != nil {
+		return fmt.Errorf("save index: %w", err)
+	}
+
+	if err := cmd.dstDB.dropIndexes(ixs); err != nil {
+		return fmt.Errorf("drop indexes: %w", err)
+	}
+
+	return nil
+}
+
+func (cmd *cmdReplicate) restoreDstIndexes(ctx context.Context, t tableInfo) error {
+	ixs, err := cmd.metaDB.getDstIndexes(t)
+	if err != nil {
+		return fmt.Errorf("get dst indexes from meta DB: %w", err)
+	}
+
+	if err := cmd.dstDB.createIndexes(ctx, ixs); err != nil {
+		return fmt.Errorf("create indexes in dst DB: %w", err)
+	}
+
+	if err := cmd.metaDB.deleteDstIndexes(t); err != nil {
+		return fmt.Errorf("delete saved indexse in meta DB: %w", err)
+	}
+
 	return nil
 }
 
