@@ -115,6 +115,177 @@ func Test_destinationDB_dropForeignKeys(t *testing.T) {
 	})
 }
 
+func Test_destinationDB_getIndexes(t *testing.T) {
+	_, dstDB, _ := openTestDB(t)
+	table := tableInfo{schema: "test", name: "table1"}
+
+	initDB := func(t *testing.T) {
+		dstDB.db.MustExec(`
+			CREATE SCHEMA test;
+			CREATE TABLE test.table1 (
+				id  INT PRIMARY KEY,
+				val INT
+			);
+			CREATE TABLE test.table2 (
+				id  INT PRIMARY KEY,
+				val INT
+			);
+			CREATE TABLE test.table3 (
+				id  INT,
+				val INT
+			);
+
+			CREATE INDEX index1 ON test.table1 (id, val);
+			CREATE INDEX index2 ON test.table1 (val);
+			CREATE INDEX index3 ON test.table2 (val);
+		`)
+
+		t.Cleanup(func() {
+			dstDB.db.MustExec("DROP SCHEMA test CASCADE")
+		})
+	}
+
+	t.Run("returns indexes of a given table", func(t *testing.T) {
+		initDB(t)
+
+		ixs, err := dstDB.getIndexes(table)
+
+		assert.NoError(t, err)
+		assert.Equal(t,
+			[]dstIndex{
+				{t: table, name: "index1", def: "CREATE INDEX index1 ON test.table1 USING btree (id, val)"},
+				{t: table, name: "index2", def: "CREATE INDEX index2 ON test.table1 USING btree (val)"},
+				{t: table, name: "table1_pkey", def: "CREATE UNIQUE INDEX table1_pkey ON test.table1 USING btree (id)"},
+			},
+			ixs,
+		)
+	})
+
+	t.Run("returns nothing if given table does not have any index", func(t *testing.T) {
+		initDB(t)
+
+		ixs, err := dstDB.getIndexes(tableInfo{schema: "test", name: "table3"})
+
+		assert.NoError(t, err)
+		assert.Empty(t, ixs)
+	})
+
+	t.Run("returns nothing if given table is not found", func(t *testing.T) {
+		initDB(t)
+
+		ixs, err := dstDB.getIndexes(tableInfo{schema: "test", name: "table4"})
+
+		assert.NoError(t, err)
+		assert.Empty(t, ixs)
+	})
+}
+
+func Test_destinationDB_dropIndexes(t *testing.T) {
+	_, dstDB, _ := openTestDB(t)
+	table := tableInfo{schema: "test", name: "table1"}
+
+	initDB := func(t *testing.T) {
+		dstDB.db.MustExec(`
+			CREATE SCHEMA test;
+			CREATE TABLE test.table1 (
+				id  INT PRIMARY KEY,
+				val INT
+			);
+			CREATE TABLE test.table2 (
+				id  INT PRIMARY KEY,
+				val INT
+			);
+			CREATE TABLE test.table3 (
+				id  INT,
+				val INT
+			);
+
+			CREATE INDEX index1 ON test.table1 (id, val);
+			CREATE INDEX index2 ON test.table1 (val);
+			CREATE INDEX index3 ON test.table2 (val);
+		`)
+
+		t.Cleanup(func() {
+			dstDB.db.MustExec("DROP SCHEMA test CASCADE")
+		})
+	}
+
+	countIndexes := func(t tableInfo) int {
+		var count int
+		dstDB.db.QueryRowx(
+			"SELECT count(*) FROM pg_indexes WHERE schemaname = $1 AND tablename = $2",
+			t.schema, t.name,
+		).Scan(&count)
+		return count
+	}
+
+	t.Run("drops given indexes", func(t *testing.T) {
+		initDB(t)
+
+		assert.Equal(t, 3, countIndexes(table))
+
+		err := dstDB.dropIndexes([]dstIndex{
+			{t: tableInfo{schema: "test"}, name: "table1_pkey"},
+			{t: tableInfo{schema: "test"}, name: "index1"},
+			{t: tableInfo{schema: "test"}, name: "index2"},
+		})
+
+		assert.NoError(t, err)
+		assert.Equal(t, 1, countIndexes(table))
+	})
+}
+
+func Test_destinationDB_createIndexes(t *testing.T) {
+	_, dstDB, _ := openTestDB(t)
+	table := tableInfo{schema: "test", name: "table1"}
+
+	initDB := func(t *testing.T) {
+		dstDB.db.MustExec(`
+			CREATE SCHEMA test;
+			CREATE TABLE test.table1 (
+				id  INT PRIMARY KEY,
+				val INT
+			);
+			CREATE TABLE test.table2 (
+				id  INT PRIMARY KEY,
+				val INT
+			);
+			CREATE TABLE test.table3 (
+				id  INT,
+				val INT
+			);
+		`)
+
+		t.Cleanup(func() {
+			dstDB.db.MustExec("DROP SCHEMA test CASCADE")
+		})
+	}
+
+	countIndexes := func(t tableInfo) int {
+		var count int
+		dstDB.db.QueryRowx(
+			"SELECT count(*) FROM pg_indexes WHERE schemaname = $1 AND tablename = $2",
+			t.schema, t.name,
+		).Scan(&count)
+		return count
+	}
+
+	t.Run("creates given indexes", func(t *testing.T) {
+		initDB(t)
+
+		assert.Equal(t, 1, countIndexes(table))
+
+		err := dstDB.createIndexes(context.Background(), []dstIndex{
+			{def: "CREATE INDEX index1 ON test.table1 USING btree (id, val)"},
+			{def: "CREATE INDEX index2 ON test.table1 USING btree (val)"},
+			{def: "CREATE UNIQUE INDEX table1_pkey ON test.table1 USING btree (id)"},
+		})
+
+		assert.NoError(t, err)
+		assert.Equal(t, 3, countIndexes(table))
+	})
+}
+
 func Test_destinationDB_insertRows(t *testing.T) {
 	_, dstDB, _ := openTestDB(t)
 	table := tableInfo{schema: "test", name: "some_table"}

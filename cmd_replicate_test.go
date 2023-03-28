@@ -274,6 +274,9 @@ func Test_cmdReplicate_copyInitial(t *testing.T) {
 				PRIMARY KEY (id1, id2)
 			);
 
+			CREATE UNIQUE INDEX index_id2 ON test.some_table (id2);
+			CREATE INDEX index_val3 ON test.some_Table (val3);
+
 			INSERT INTO test.some_table (id1, id2) VALUES
 				('1a2b3c4d-5a6b-7c8d-9910-111213141518', 4),
 				('1a2b3c4d-5a6b-7c8d-9910-111213141519', 5);
@@ -387,6 +390,20 @@ func Test_cmdReplicate_copyInitial(t *testing.T) {
 			},
 			getAllData(t, dstDB.db, table, "id1, id2"),
 		)
+	})
+
+	t.Run("does not modify indexes", func(t *testing.T) {
+		initDB(t)
+
+		before, err := cmd.dstDB.getIndexes(table)
+		assert.NoError(t, err)
+
+		err = cmd.copyInitial(context.Background(), table)
+
+		after, _ := cmd.dstDB.getIndexes(table)
+
+		assert.NoError(t, err)
+		assert.Equal(t, before, after)
 	})
 }
 

@@ -25,6 +25,15 @@ CREATE TABLE IF NOT EXISTS foreign_keys (
 
 	PRIMARY KEY (schema_name, table_name, fk_name)
 );
+
+CREATE TABLE IF NOT EXISTS indexes (
+	schema_name TEXT NOT NULL,
+	table_name  TEXT NOT NULL,
+	index_name  TEXT NOT NULL,
+	index_def   TEXT NOT NULL,
+
+	PRIMARY KEY (schema_name, table_name, index_name)
+);
 `
 
 type metaDB struct {
@@ -98,6 +107,64 @@ func (db *metaDB) getSavedForeignKeys() ([]dstForeignKey, error) {
 	}
 
 	return ret, nil
+}
+
+func (db *metaDB) getDstIndexes(t tableInfo) ([]dstIndex, error) {
+	rows, err := db.db.Queryx(
+		`SELECT index_name, index_def
+		FROM indexes
+		WHERE schema_name = ? AND table_name = ?`,
+		t.schema, t.name,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("sql query: %w", err)
+	}
+
+	var ret []dstIndex
+	for rows.Next() {
+		var ixn, ixd string
+		if err := rows.Scan(&ixn, &ixd); err != nil {
+			return nil, fmt.Errorf("scan row: %w", err)
+		}
+
+		ret = append(ret, dstIndex{t: t, name: ixn, def: ixd})
+	}
+
+	return ret, nil
+}
+
+func (db *metaDB) saveDstIndexes(ixs []dstIndex) error {
+	if len(ixs) == 0 {
+		return nil
+	}
+
+	data := make([]rowdata, len(ixs))
+	for i, ix := range ixs {
+		data[i] = rowdata{
+			"schema_name": ix.t.schema,
+			"table_name":  ix.t.name,
+			"index_name":  ix.name,
+			"index_def":   ix.def,
+		}
+	}
+
+	_, err := db.db.NamedExec(
+		`INSERT INTO indexes (schema_name, table_name, index_name, index_def)
+		VALUES (:schema_name, :table_name, :index_name, :index_def)
+		ON CONFLICT DO NOTHING`,
+		data,
+	)
+
+	return err
+}
+
+func (db *metaDB) deleteDstIndexes(t tableInfo) error {
+	_, err := db.db.Exec(
+		`DELETE FROM indexes WHERE schema_name = ? AND table_name = ?`,
+		t.schema, t.name,
+	)
+
+	return err
 }
 
 func (db *metaDB) saveChangeTrackingVersion(t tableInfo, ver int64) error {

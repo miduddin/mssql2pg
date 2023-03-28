@@ -138,6 +138,19 @@ func (cmd *cmdReplicate) copyInitial(ctx context.Context, t tableInfo) error {
 		return nil
 	}
 
+	ixs, err := cmd.dstDB.getIndexes(t)
+	if err != nil {
+		return fmt.Errorf("get indexes: %w", err)
+	}
+
+	if err := cmd.metaDB.saveDstIndexes(ixs); err != nil {
+		return fmt.Errorf("save index: %w", err)
+	}
+
+	if err := cmd.dstDB.dropIndexes(ixs); err != nil {
+		return fmt.Errorf("drop indexes: %w", err)
+	}
+
 	var (
 		rowChan        = make(chan rowdata)
 		errChan        = make(chan error, 2)
@@ -168,6 +181,14 @@ func (cmd *cmdReplicate) copyInitial(ctx context.Context, t tableInfo) error {
 	close(errChan)
 	if err := <-errChan; err != nil {
 		return fmt.Errorf("read/write data: %w", err)
+	}
+
+	if err := cmd.dstDB.createIndexes(ctx, ixs); err != nil {
+		return fmt.Errorf("restore dst index: %w", err)
+	}
+
+	if err := cmd.metaDB.deleteDstIndexes(t); err != nil {
+		return fmt.Errorf("delete saved indexse in meta DB: %w", err)
 	}
 
 	if err := cmd.metaDB.markInitialCopyDone(t); err != nil {

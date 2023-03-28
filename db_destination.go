@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"regexp"
 	"strings"
 
 	"github.com/jmoiron/sqlx"
@@ -103,6 +104,63 @@ func (db *destinationDB) createForeignKeys(fks []dstForeignKey) error {
 
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("commit transaction: %w", err)
+	}
+
+	return nil
+}
+
+type dstIndex struct {
+	t    tableInfo
+	name string
+	def  string
+}
+
+func (db *destinationDB) getIndexes(t tableInfo) ([]dstIndex, error) {
+	rows, err := db.db.Queryx(
+		`SELECT indexname, indexdef
+		FROM pg_indexes
+		WHERE schemaname = $1 AND tablename = $2
+		ORDER BY indexname`,
+		t.schema, t.name,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("sql query: %w", err)
+	}
+
+	var ret []dstIndex
+	for rows.Next() {
+		var ixn, ixd string
+		if err := rows.Scan(&ixn, &ixd); err != nil {
+			return nil, fmt.Errorf("scan row: %w", err)
+		}
+
+		ret = append(ret, dstIndex{t: t, name: ixn, def: ixd})
+	}
+
+	return ret, nil
+}
+
+func (db *destinationDB) dropIndexes(ixs []dstIndex) error {
+	re := regexp.MustCompile(".+? cannot drop index .+? because constraint .+? on table .+? requires it")
+
+	for _, ix := range ixs {
+		_, err := db.db.Exec(fmt.Sprintf(`DROP INDEX "%s"."%s"`, ix.t.schema, ix.name))
+
+		// Ignore indexes from constraints.
+		if err != nil && !re.MatchString(err.Error()) {
+			return fmt.Errorf("drop index '%s.%s': %w", ix.t.schema, ix.name, err)
+		}
+	}
+
+	return nil
+}
+
+func (db *destinationDB) createIndexes(ctx context.Context, ixs []dstIndex) error {
+	for _, ix := range ixs {
+		_, err := db.db.ExecContext(ctx, strings.Replace(ix.def, " INDEX ", " INDEX IF NOT EXISTS ", 1))
+		if err != nil {
+			return fmt.Errorf("create index '%s': %w", ix.name, err)
+		}
 	}
 
 	return nil
