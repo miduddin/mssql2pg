@@ -5,8 +5,10 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"os"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/jmoiron/sqlx"
 	mssql "github.com/microsoft/go-mssqldb"
@@ -178,7 +180,22 @@ func (db *sourceDB) readRows(ctx context.Context, t tableInfo, output chan<- row
 		return fmt.Errorf("read column types: %w", err)
 	}
 
-	bar := progressbar.Default(-1)
+	// From progressbar.Default()
+	bar := progressbar.NewOptions64(
+		-1,
+		progressbar.OptionSetDescription(""),
+		progressbar.OptionSetWriter(os.Stderr),
+		progressbar.OptionSetWidth(10),
+		progressbar.OptionThrottle(500*time.Millisecond),
+		progressbar.OptionShowCount(),
+		progressbar.OptionShowIts(),
+		progressbar.OptionOnCompletion(func() {
+			fmt.Fprint(os.Stderr, "\n")
+		}),
+		progressbar.OptionSpinnerType(14),
+		progressbar.OptionFullWidth(),
+		progressbar.OptionSetRenderBlankState(true),
+	)
 
 	for rows.Next() {
 		row, err := rows.SliceScan()

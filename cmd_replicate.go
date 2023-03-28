@@ -19,6 +19,8 @@ type cmdReplicate struct {
 	excludeTables   []string
 
 	changeTrackingCopyMinInterval time.Duration
+
+	allInitialCopyDone bool
 }
 
 func newCmdReplicate(srcDB *sourceDB, dstDB *destinationDB, metaDB *metaDB, tablesToPutLast, excludeTables []string) *cmdReplicate {
@@ -82,6 +84,7 @@ func (cmd *cmdReplicate) start(ctx context.Context) error {
 		ctQueue <- t
 	}
 
+	cmd.allInitialCopyDone = true
 	<-wait
 
 	return nil
@@ -187,7 +190,9 @@ func (cmd *cmdReplicate) copyChangeTracking(ctx context.Context, queue chan tabl
 			} else if err != nil {
 				cmd.printLog(table, "Copy change tracking failed: "+err.Error())
 			} else {
-				cmd.printLog(table, fmt.Sprintf("Copied change tracking data, rows read: %d, rows written: %d", nr, nw))
+				if cmd.allInitialCopyDone {
+					cmd.printLog(table, fmt.Sprintf("Copied change tracking data, rows read: %d, rows written: %d", nr, nw))
+				}
 			}
 
 			go func() {
