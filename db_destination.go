@@ -108,39 +108,56 @@ func (db *destinationDB) createForeignKeys(fks []dstForeignKey) error {
 	return nil
 }
 
-func (db *destinationDB) insertRows(ctx context.Context, t tableInfo, input <-chan rowdata) error {
-	tx, err := db.db.Beginx()
-	if err != nil {
-		return fmt.Errorf("begin tx: %w", err)
-	}
-	defer tx.Rollback()
+const copyBatchSize = 1_000_000
 
-	if _, err := tx.ExecContext(ctx, fmt.Sprintf(`TRUNCATE TABLE "%s"."%s"`, t.schema, t.name)); err != nil {
+func (db *destinationDB) insertRows(ctx context.Context, t tableInfo, input <-chan rowdata) error {
+	_, err := db.db.Exec(fmt.Sprintf(`TRUNCATE TABLE "%s"."%s"`, t.schema, t.name))
+	if err != nil {
 		return fmt.Errorf("truncate table: %w", err)
 	}
 
 	var (
+		tx   *sqlx.Tx
 		stmt *sqlx.Stmt
 		cols []string
 		vals []any
 	)
 
+	count := 0
 	for {
 		select {
 		case rd, ok := <-input:
-			if !ok {
+			count++
+
+			if !ok || count == copyBatchSize {
 				// stmt can be nil when input is empty.
 				if stmt != nil {
 					if _, err := stmt.ExecContext(ctx); err != nil {
 						return fmt.Errorf("flush copy: %w", err)
 					}
+
+					if err := tx.Commit(); err != nil {
+						return fmt.Errorf("commit tx: %w", err)
+					}
 				}
 
-				if err := tx.Commit(); err != nil {
-					return fmt.Errorf("commit tx: %w", err)
+				if !ok {
+					return nil
 				}
 
-				return nil
+				stmt.Close()
+				tx = nil
+				stmt = nil
+				count = 0
+				cols = nil
+			}
+
+			if tx == nil {
+				tx, err = db.db.Beginx()
+				if err != nil {
+					return fmt.Errorf("begin tx: %w", err)
+				}
+				defer tx.Rollback()
 			}
 
 			if stmt == nil {

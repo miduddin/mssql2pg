@@ -228,6 +228,28 @@ func Test_destinationDB_insertRows(t *testing.T) {
 			getAllData(t, dstDB.db, table, "id1 ASC, id2 ASC"),
 		)
 	})
+
+	t.Run("able to process large amount of input in batch", func(t *testing.T) {
+		initDB(t)
+		dstDB.db.MustExec(`CREATE TABLE test.more_table(id INT)`)
+		ch := make(chan rowdata)
+		go func() {
+			for i := 0; i < copyBatchSize+100; i++ {
+				ch <- rowdata{"id": i + 1}
+			}
+			close(ch)
+		}()
+
+		err := dstDB.insertRows(context.Background(), tableInfo{schema: "test", name: "more_table"}, ch)
+
+		assert.NoError(t, err)
+
+		data := getAllData(t, dstDB.db, tableInfo{schema: "test", name: "more_table"}, "id")
+		assert.Len(t, data, copyBatchSize+100)
+		for i, r := range data {
+			assert.Equal(t, rowdata{"id": int64(i + 1)}, r)
+		}
+	})
 }
 
 func Test_destinationDB_writeTableChanges(t *testing.T) {
