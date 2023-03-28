@@ -250,12 +250,13 @@ func Test_cmdReplicate_copyInitial(t *testing.T) {
 				val4 DATETIME,
 				val5 DATETIME,
 				val6 CHAR(1),
+				val7 TEXT,
 				PRIMARY KEY (id1, id2)
 			);
 
-			INSERT INTO test.some_table (id1, id2, val1, val2, val3, val4, val5, val6) VALUES
-				('1a2b3c4d-5a6b-7c8d-9910-111213141516', 1, 'foo', 2, '2020-01-02', '2020-01-02T15:04:05Z', '2020-01-02T15:04:05Z', 'A'),
-				('1a2b3c4d-5a6b-7c8d-9910-111213141517', 3, 'bar', 4, '2020-01-03', '2020-01-03T15:04:05Z', '2020-01-03T15:04:05Z', 'B');
+			INSERT INTO test.some_table (id1, id2, val1, val2, val3, val4, val5, val6, val7) VALUES
+				('1a2b3c4d-5a6b-7c8d-9910-111213141516', 1, 'foo', 2, '2020-01-02', '2020-01-02T15:04:05Z', '2020-01-02T15:04:05Z', 'A', 'lorem'),
+				('1a2b3c4d-5a6b-7c8d-9910-111213141517', 3, 'bar', 4, '2020-01-03', '2020-01-03T15:04:05Z', '2020-01-03T15:04:05Z', 'B', 'ipsum'+char(0));
 		`)
 
 		dstDB.db.MustExec(`
@@ -269,6 +270,7 @@ func Test_cmdReplicate_copyInitial(t *testing.T) {
 				val4 date,
 				val5 timestamp,
 				val6 char(1),
+				val7 text,
 				PRIMARY KEY (id1, id2)
 			);
 
@@ -310,6 +312,7 @@ func Test_cmdReplicate_copyInitial(t *testing.T) {
 					"val4": time.Date(2020, 1, 2, 0, 0, 0, 0, time.UTC),
 					"val5": time.Date(2020, 1, 2, 15, 4, 5, 0, time.UTC),
 					"val6": []byte("A"),
+					"val7": "lorem",
 				},
 				{
 					"id1":  []byte("1a2b3c4d-5a6b-7c8d-9910-111213141517"),
@@ -320,6 +323,7 @@ func Test_cmdReplicate_copyInitial(t *testing.T) {
 					"val4": time.Date(2020, 1, 3, 0, 0, 0, 0, time.UTC),
 					"val5": time.Date(2020, 1, 3, 15, 4, 5, 0, time.UTC),
 					"val6": []byte("B"),
+					"val7": "ipsum",
 				},
 			},
 			getAllData(t, dstDB.db, table, "id1, id2"),
@@ -367,6 +371,7 @@ func Test_cmdReplicate_copyInitial(t *testing.T) {
 					"val4": nil,
 					"val5": nil,
 					"val6": nil,
+					"val7": nil,
 				},
 				{
 					"id1":  []byte("1a2b3c4d-5a6b-7c8d-9910-111213141519"),
@@ -377,6 +382,7 @@ func Test_cmdReplicate_copyInitial(t *testing.T) {
 					"val4": nil,
 					"val5": nil,
 					"val6": nil,
+					"val7": nil,
 				},
 			},
 			getAllData(t, dstDB.db, table, "id1, id2"),

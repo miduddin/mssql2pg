@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"log"
 	"os"
 	"strconv"
 	"strings"
@@ -237,6 +238,12 @@ func (db *sourceDB) fixValueByType(v any, ct *sql.ColumnType) any {
 	case "DECIMAL":
 		v, _ := strconv.ParseFloat(string(v.([]byte)), 64)
 		return v
+	case "TEXT":
+		v, _ := v.(string)
+		if strings.Contains(v, "\x00") {
+			log.Printf("Warning: removed NULL characters in column '%s'", ct.Name())
+		}
+		return strings.ReplaceAll(v, "\x00", "")
 	default:
 		return v
 	}
