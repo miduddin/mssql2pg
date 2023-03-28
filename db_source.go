@@ -181,9 +181,11 @@ func (db *sourceDB) readRows(ctx context.Context, t tableInfo, output chan<- row
 		return fmt.Errorf("read column types: %w", err)
 	}
 
+	count, _ := db.getRowCount(t)
+
 	// From progressbar.Default()
 	bar := progressbar.NewOptions64(
-		-1,
+		count,
 		progressbar.OptionSetDescription(""),
 		progressbar.OptionSetWriter(os.Stderr),
 		progressbar.OptionSetWidth(10),
@@ -359,4 +361,19 @@ func (db *sourceDB) getRow(t tableInfo, primaryKeys rowdata) (rowdata, error) {
 	}
 
 	return rd, nil
+}
+
+func (db *sourceDB) getRowCount(t tableInfo) (int64, error) {
+	var ret int64
+	err := db.db.QueryRowx(fmt.Sprintf(
+		`SELECT SUM(st.row_count)
+		FROM sys.dm_db_partition_stats st
+		WHERE object_id = object_id('%s.%s') AND (index_id < 2)`,
+		t.schema, t.name,
+	)).Scan(&ret)
+	if err != nil {
+		return -1, fmt.Errorf("sql select: %w", err)
+	}
+
+	return ret, nil
 }
