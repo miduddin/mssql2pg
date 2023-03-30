@@ -69,6 +69,10 @@ func (db *destinationDB) getForeignKeys() ([]dstForeignKey, error) {
 		ret = append(ret, fk)
 	}
 
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("read rows: %w", err)
+	}
+
 	return ret, nil
 }
 
@@ -136,6 +140,10 @@ func (db *destinationDB) getIndexes(t tableInfo) ([]dstIndex, error) {
 		}
 
 		ret = append(ret, dstIndex{t: t, name: ixn, def: ixd})
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("read rows: %w", err)
 	}
 
 	return ret, nil

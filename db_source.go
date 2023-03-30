@@ -86,6 +86,10 @@ func (db *sourceDB) getTables(tablesToPutLast, excludes []string) ([]tableInfo, 
 		}
 	}
 
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("read rows: %w", err)
+	}
+
 	var firstTables, lastTables []tableInfo
 	for _, t := range tablesToPutLast {
 		ss := strings.Split(t, ".")
@@ -211,6 +215,10 @@ func (db *sourceDB) readRows(ctx context.Context, t tableInfo, output chan<- row
 	}
 	fmt.Println()
 
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("read rows: %w", err)
+	}
+
 	return nil
 }
 
@@ -308,6 +316,10 @@ func (db *sourceDB) readTableChanges(ctx context.Context, t tableInfo, lastSyncV
 		case <-ctx.Done():
 			return 0, fmt.Errorf("read change table aborted, reason: %w", ctx.Err())
 		}
+	}
+
+	if err := rows.Err(); err != nil {
+		return 0, fmt.Errorf("read rows: %w", err)
 	}
 
 	return n, nil
