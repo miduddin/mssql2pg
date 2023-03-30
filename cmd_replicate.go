@@ -65,6 +65,10 @@ func (cmd *cmdReplicate) start(ctx context.Context) error {
 	}
 
 	for _, t := range tables {
+		if err := ctx.Err(); err != nil {
+			return fmt.Errorf("aborted: %w", err)
+		}
+
 		if err := cmd.srcDB.enableChangeTracking(t); err != nil {
 			return fmt.Errorf("enable change tracking: %w", err)
 		}
