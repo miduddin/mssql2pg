@@ -241,6 +241,56 @@ func Test_sourceDB_readRows(t *testing.T) {
 	})
 }
 
+func Test_sourceDB_getPrimaryKeys(t *testing.T) {
+	srcDB, _, _ := openTestDB(t)
+
+	initDB := func(t *testing.T) {
+		srcDB.db.MustExec(`
+			CREATE SCHEMA test;
+		`)
+		srcDB.db.MustExec(`
+			CREATE TABLE test.some_table (
+				id1  UNIQUEIDENTIFIER,
+				id2  INT,
+				val1 VARCHAR(15),
+				val2 NUMERIC(2, 0),
+				val3 DATE,
+				val4 DATETIME,
+				val5 DATETIME,
+				val6 CHAR(1),
+				PRIMARY KEY (id1, id2)
+			);
+
+			CREATE TABLE test.other_table (
+				id  INT,
+				val TEXT
+			);
+		`)
+
+		t.Cleanup(func() {
+			srcDB.db.MustExec(`
+				DROP TABLE test.other_table;
+				DROP TABLE test.some_table;
+				DROP SCHEMA test;
+			`)
+		})
+	}
+
+	t.Run("returns table primary keys", func(t *testing.T) {
+		initDB(t)
+
+		res, err := srcDB.getPrimaryKeys(tableInfo{schema: "test", name: "some_table"})
+
+		assert.NoError(t, err)
+		assert.Equal(t, []string{"id1", "id2"}, res)
+
+		res, err = srcDB.getPrimaryKeys(tableInfo{schema: "test", name: "other_table"})
+
+		assert.NoError(t, err)
+		assert.Empty(t, res)
+	})
+}
+
 func Test_sourceDB_readTableChanges(t *testing.T) {
 	srcDB, _, _ := openTestDB(t)
 	table := tableInfo{schema: "test", name: "some_table"}

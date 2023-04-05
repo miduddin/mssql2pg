@@ -170,9 +170,14 @@ func (db *sourceDB) enableChangeTracking(t tableInfo) error {
 }
 
 func (db *sourceDB) readRows(ctx context.Context, t tableInfo, output chan<- rowdata) error {
+	pks, err := db.getPrimaryKeys(t)
+	if err != nil {
+		return fmt.Errorf("get primary keys: %w", err)
+	}
+
 	rows, err := db.db.QueryxContext(ctx, fmt.Sprintf(
-		`SELECT * FROM [%s].[%s] WITH (NOLOCK)`,
-		t.schema, t.name,
+		`SELECT * FROM [%s].[%s] WITH (NOLOCK) ORDER BY %s`,
+		t.schema, t.name, strings.Join(pks, ","),
 	))
 	if err != nil {
 		return fmt.Errorf("sql query: %w", err)
@@ -220,6 +225,35 @@ func (db *sourceDB) readRows(ctx context.Context, t tableInfo, output chan<- row
 	}
 
 	return nil
+}
+
+func (db *sourceDB) getPrimaryKeys(t tableInfo) ([]string, error) {
+	rows, err := db.db.Queryx(
+		`SELECT column_name
+		FROM information_schema.key_column_usage
+		WHERE objectproperty(object_id(constraint_schema + '.' + quotename(constraint_name)), 'IsPrimaryKey') = 1
+		AND table_schema = @p1 AND table_name = @p2
+		ORDER BY ordinal_position`,
+		t.schema, t.name,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("sql select: %w", err)
+	}
+
+	var ret []string
+	for rows.Next() {
+		var s string
+		if err := rows.Scan(&s); err != nil {
+			return nil, fmt.Errorf("scan row: %w", err)
+		}
+
+		ret = append(ret, s)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("scan row: %w", err)
+	}
+
+	return ret, nil
 }
 
 func (db *sourceDB) fixValueByType(v any, ct *sql.ColumnType) any {
