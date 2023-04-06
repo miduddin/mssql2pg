@@ -96,7 +96,13 @@ func (cmd *cmdReplicate) start(ctx context.Context) error {
 			}
 			if err != nil {
 				log.Err(err).Msgf("Initial table copy error (will retry)")
-				time.Sleep(5 * time.Minute)
+
+				select {
+				case <-time.After(5 * time.Minute):
+				case <-ctx.Done():
+					return fmt.Errorf("initial table copy: %w", ctx.Err())
+				}
+
 				continue
 			}
 
