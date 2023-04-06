@@ -19,12 +19,15 @@ type cmdReplicate struct {
 	tablesToPutLast []string
 	excludeTables   []string
 
+	initialCopyBatchSize        uint
+	changeTrackingRetentionDays uint
+
 	changeTrackingCopyMinInterval time.Duration
 
 	allInitialCopyDone bool
 }
 
-func newCmdReplicate(srcDB *sourceDB, dstDB *destinationDB, metaDB *metaDB, tablesToPutLast, excludeTables []string) *cmdReplicate {
+func newCmdReplicate(srcDB *sourceDB, dstDB *destinationDB, metaDB *metaDB, tablesToPutLast, excludeTables []string, initialCopyBatchSize, changeTrackingRetentionDays uint) *cmdReplicate {
 	return &cmdReplicate{
 		srcDB:  srcDB,
 		dstDB:  dstDB,
@@ -32,6 +35,9 @@ func newCmdReplicate(srcDB *sourceDB, dstDB *destinationDB, metaDB *metaDB, tabl
 
 		tablesToPutLast: tablesToPutLast,
 		excludeTables:   excludeTables,
+
+		initialCopyBatchSize:        initialCopyBatchSize,
+		changeTrackingRetentionDays: changeTrackingRetentionDays,
 
 		changeTrackingCopyMinInterval: 1 * time.Minute,
 	}
@@ -69,7 +75,7 @@ func (cmd *cmdReplicate) start(ctx context.Context) error {
 			return fmt.Errorf("aborted: %w", err)
 		}
 
-		if err := cmd.srcDB.enableChangeTracking(t); err != nil {
+		if err := cmd.srcDB.enableChangeTracking(t, cmd.changeTrackingRetentionDays); err != nil {
 			return fmt.Errorf("enable change tracking: %w", err)
 		}
 
@@ -189,7 +195,7 @@ func (cmd *cmdReplicate) copyInitial(ctx context.Context, t tableInfo) error {
 		// Only support resumable insert if table has single column PK.
 		// See the note inside cmd.srcDB.readRows()
 		truncateFirst := len(lastRowPKs) != 1
-		if err := cmd.dstDB.insertRows(newCtx, cmd.dstTable(t), truncateFirst, rowChan); err != nil {
+		if err := cmd.dstDB.insertRows(newCtx, cmd.dstTable(t), truncateFirst, cmd.initialCopyBatchSize, rowChan); err != nil {
 			errChan <- err
 			cancel()
 		}

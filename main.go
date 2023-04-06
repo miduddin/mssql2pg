@@ -45,7 +45,13 @@ func main() {
 			cancel()
 		}()
 
-		cmd := newCmdReplicate(srcDB, dstDB, metaDB, cfg.TablesToPutLast, cfg.ExcludeTables)
+		cmd := newCmdReplicate(
+			srcDB, dstDB, metaDB,
+			cfg.TablesToPutLast,
+			cfg.ExcludeTables,
+			cfg.InitialCopyBatchSize,
+			cfg.ChangeTrackingRetentionDays,
+		)
 		log.Err(cmd.start(ctx)).Msg("Done.")
 
 	case "restore_fks":

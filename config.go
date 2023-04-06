@@ -21,6 +21,9 @@ type config struct {
 
 	TablesToPutLast []string `json:"tablesToPutLast"`
 	ExcludeTables   []string `json:"excludeTables"`
+
+	InitialCopyBatchSize        uint `json:"initialCopyBatchSize"`
+	ChangeTrackingRetentionDays uint `json:"changeTrackingRetentionDays"`
 }
 
 func loadConfig(configPath string) (config, error) {

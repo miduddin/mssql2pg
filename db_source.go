@@ -122,7 +122,7 @@ func (db *sourceDB) getChangeTrackingCurrentVersion(t tableInfo) (int64, error) 
 	return ver, err
 }
 
-func (db *sourceDB) enableChangeTracking(t tableInfo) error {
+func (db *sourceDB) enableChangeTracking(t tableInfo, retentionDays uint) error {
 	var count uint
 	err := db.db.QueryRowx(
 		`SELECT count(*)
@@ -134,13 +134,24 @@ func (db *sourceDB) enableChangeTracking(t tableInfo) error {
 	}
 
 	if count == 0 {
-		_, err = db.db.Exec(
+		_, err = db.db.Exec(fmt.Sprintf(
 			`ALTER DATABASE CURRENT
 			SET CHANGE_TRACKING = ON
-			(CHANGE_RETENTION = 14 DAYS, AUTO_CLEANUP = ON)`,
-		)
+			(CHANGE_RETENTION = %d DAYS, AUTO_CLEANUP = ON)`,
+			retentionDays,
+		))
 		if err != nil {
 			return fmt.Errorf("enable db change tracking: %w", err)
+		}
+	} else {
+		_, err = db.db.Exec(fmt.Sprintf(
+			`ALTER DATABASE CURRENT
+				SET CHANGE_TRACKING
+				(CHANGE_RETENTION = %d DAYS, AUTO_CLEANUP = ON)`,
+			retentionDays,
+		))
+		if err != nil {
+			return fmt.Errorf("update db change tracking params: %w", err)
 		}
 	}
 

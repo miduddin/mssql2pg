@@ -435,7 +435,7 @@ func Test_destinationDB_insertRows(t *testing.T) {
 		}
 		close(ch)
 
-		err := dstDB.insertRows(context.Background(), table, true, ch)
+		err := dstDB.insertRows(context.Background(), table, true, 10, ch)
 
 		assert.NoError(t, err)
 		assert.Equal(t,
@@ -472,7 +472,7 @@ func Test_destinationDB_insertRows(t *testing.T) {
 		wait := make(chan struct{})
 
 		go func() {
-			err := dstDB.insertRows(ctx, table, true, ch)
+			err := dstDB.insertRows(ctx, table, true, 10, ch)
 
 			assert.EqualError(t, err, "insert data aborted, reason: context canceled")
 			close(wait)
@@ -489,7 +489,7 @@ func Test_destinationDB_insertRows(t *testing.T) {
 		ch := make(chan rowdata, 3)
 		close(ch)
 
-		err := dstDB.insertRows(context.Background(), table, true, ch)
+		err := dstDB.insertRows(context.Background(), table, true, 10, ch)
 
 		assert.NoError(t, err)
 		assert.Equal(t,
@@ -501,7 +501,6 @@ func Test_destinationDB_insertRows(t *testing.T) {
 	t.Run("able to process large amount of input in batch", func(t *testing.T) {
 		initDB(t)
 		dstDB.db.MustExec(`CREATE TABLE test.more_table(id INT)`)
-		dstDB.insertBatchSize = 100
 		ch := make(chan rowdata)
 		go func() {
 			for i := 0; i < 212; i++ {
@@ -510,7 +509,7 @@ func Test_destinationDB_insertRows(t *testing.T) {
 			close(ch)
 		}()
 
-		err := dstDB.insertRows(context.Background(), tableInfo{schema: "test", name: "more_table"}, true, ch)
+		err := dstDB.insertRows(context.Background(), tableInfo{schema: "test", name: "more_table"}, true, 100, ch)
 
 		assert.NoError(t, err)
 
@@ -547,7 +546,7 @@ func Test_destinationDB_insertRows(t *testing.T) {
 		}
 		close(ch)
 
-		err := dstDB.insertRows(context.Background(), table, false, ch)
+		err := dstDB.insertRows(context.Background(), table, false, 10, ch)
 
 		assert.NoError(t, err)
 		assert.Equal(t,

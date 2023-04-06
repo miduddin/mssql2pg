@@ -125,7 +125,7 @@ func Test_sourceDB_enableChangeTracking(t *testing.T) {
 	t.Run("enables change tracking config for database & table", func(t *testing.T) {
 		initDB(t)
 
-		err := srcDB.enableChangeTracking(table)
+		err := srcDB.enableChangeTracking(table, 1)
 
 		assert.NoError(t, err)
 
@@ -137,12 +137,19 @@ func Test_sourceDB_enableChangeTracking(t *testing.T) {
 		assert.Equal(t, 1, count)
 	})
 
-	t.Run("does not return error when run multiple times on same table", func(t *testing.T) {
+	t.Run("updates change tracking parameter when called with different ones", func(t *testing.T) {
 		initDB(t)
 
-		srcDB.enableChangeTracking(table)
-		err := srcDB.enableChangeTracking(table)
+		err := srcDB.enableChangeTracking(table, 1)
 
+		data := getAllData(t, srcDB.db, tableInfo{schema: "sys", name: "change_tracking_databases"}, "database_id")
+		assert.Equal(t, int64(1), data[0]["retention_period"])
+		assert.NoError(t, err)
+
+		err = srcDB.enableChangeTracking(table, 3)
+
+		data = getAllData(t, srcDB.db, tableInfo{schema: "sys", name: "change_tracking_databases"}, "database_id")
+		assert.Equal(t, int64(3), data[0]["retention_period"])
 		assert.NoError(t, err)
 	})
 }

@@ -13,7 +13,7 @@ import (
 
 func Test_cmdReplicate_start(t *testing.T) {
 	srcDB, dstDB, metaDB := openTestDB(t)
-	cmd := newCmdReplicate(srcDB, dstDB, metaDB, nil, nil)
+	cmd := newCmdReplicate(srcDB, dstDB, metaDB, nil, nil, 10, 1)
 	cmd.changeTrackingCopyMinInterval = 50 * time.Millisecond
 
 	initDB := func(t *testing.T) {
@@ -128,7 +128,7 @@ func Test_cmdReplicate_start(t *testing.T) {
 			close(wait)
 		}()
 
-		time.Sleep(200 * time.Millisecond)
+		time.Sleep(400 * time.Millisecond)
 
 		assert.Equal(t,
 			[]rowdata{
@@ -233,7 +233,7 @@ func Test_cmdReplicate_start(t *testing.T) {
 
 func Test_cmdReplicate_copyInitial(t *testing.T) {
 	srcDB, dstDB, metaDB := openTestDB(t)
-	cmd := newCmdReplicate(srcDB, dstDB, metaDB, nil, nil)
+	cmd := newCmdReplicate(srcDB, dstDB, metaDB, nil, nil, 10, 1)
 	table := tableInfo{schema: "test", name: "some_table"}
 
 	initDB := func(t *testing.T) {
@@ -444,7 +444,7 @@ func Test_cmdReplicate_copyInitial(t *testing.T) {
 
 func Test_cmdReplicate_copyChangeTracking(t *testing.T) {
 	srcDB, dstDB, metaDB := openTestDB(t)
-	cmd := newCmdReplicate(srcDB, dstDB, metaDB, nil, nil)
+	cmd := newCmdReplicate(srcDB, dstDB, metaDB, nil, nil, 10, 1)
 
 	initDB := func(t *testing.T) {
 		srcDB.db.MustExec(`
@@ -700,7 +700,7 @@ func Test_cmdReplicate_copyChangeTracking(t *testing.T) {
 func Test_cmdReplicate_getLastValidSyncVersion(t *testing.T) {
 	var (
 		srcDB, _, metaDB = openTestDB(t)
-		cmd              = newCmdReplicate(srcDB, nil, metaDB, nil, nil)
+		cmd              = newCmdReplicate(srcDB, nil, metaDB, nil, nil, 10, 1)
 		table            = tableInfo{schema: "test", name: "some_table"}
 	)
 
@@ -782,7 +782,7 @@ func Test_cmdReplicate_getLastValidSyncVersion(t *testing.T) {
 }
 
 func Test_cmdReplicate_dstTable(t *testing.T) {
-	cmd := newCmdReplicate(nil, nil, nil, nil, nil)
+	cmd := newCmdReplicate(nil, nil, nil, nil, nil, 10, 1)
 
 	assert.Equal(t, tableInfo{schema: "public", name: "table1"}, cmd.dstTable(tableInfo{schema: "dbo", name: "table1"}))
 	assert.Equal(t, tableInfo{schema: "test", name: "table1"}, cmd.dstTable(tableInfo{schema: "test", name: "table1"}))
