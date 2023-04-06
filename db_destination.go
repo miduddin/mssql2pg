@@ -2,9 +2,12 @@ package main
 
 import (
 	"context"
+	"database/sql"
+	"errors"
 	"fmt"
 	"os"
 	"regexp"
+	"strconv"
 	"strings"
 
 	"github.com/jmoiron/sqlx"
@@ -114,6 +117,98 @@ func (db *destinationDB) createForeignKeys(fks []dstForeignKey) error {
 	return nil
 }
 
+func (db *destinationDB) getLastRowByPK(t tableInfo) (rowdata, error) {
+	pks, err := db.getPrimaryKeys(t)
+	if err != nil {
+		return nil, fmt.Errorf("get primary keys: %w", err)
+	}
+
+	orders := make([]string, len(pks))
+	for i, pk := range pks {
+		orders[i] = pk + " DESC"
+	}
+
+	row := db.db.QueryRowx(fmt.Sprintf(
+		`SELECT %s FROM "%s"."%s" ORDER BY %s LIMIT 1`,
+		strings.Join(pks, ","), t.schema, t.name, strings.Join(orders, ","),
+	))
+
+	cols, err := row.ColumnTypes()
+	if err != nil {
+		return nil, fmt.Errorf("read column types: %w", err)
+	}
+
+	vals, err := row.SliceScan()
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("sql select: %w", err)
+	}
+
+	ret := rowdata{}
+	for i, col := range cols {
+		ret[col.Name()] = db.fixValueByType(vals[i], col)
+	}
+
+	return ret, nil
+}
+
+func (db *destinationDB) fixValueByType(v any, ct *sql.ColumnType) any {
+	if v == nil {
+		return nil
+	}
+
+	switch ct.DatabaseTypeName() {
+	case "UUID":
+		return string(v.([]byte))
+	case "NUMERIC":
+		v, _ := strconv.ParseFloat(string(v.([]byte)), 64)
+		return v
+	default:
+		return v
+	}
+}
+
+func (db *destinationDB) getPrimaryKeys(t tableInfo) ([]string, error) {
+	tableName := t.name
+	if t.schema != "public" {
+		tableName = t.schema + "." + tableName
+	}
+
+	rows, err := db.db.Queryx(
+		`SELECT a.attname
+		FROM pg_attribute a
+			JOIN (
+				SELECT *, GENERATE_SUBSCRIPTS(indkey, 1) AS indkey_subscript
+				FROM pg_index
+				WHERE indrelid = CAST($1 AS regclass)
+			) AS i
+			ON i.indisprimary AND i.indrelid = a.attrelid AND a.attnum = i.indkey[i.indkey_subscript]
+		WHERE a.attrelid = CAST($1 AS regclass)
+		ORDER BY i.indkey_subscript`,
+		tableName,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("sql select: %w", err)
+	}
+
+	var ret []string
+	for rows.Next() {
+		var s string
+		if err := rows.Scan(&s); err != nil {
+			return nil, fmt.Errorf("scan row: %w", err)
+		}
+
+		ret = append(ret, s)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("read rows: %w", err)
+	}
+
+	return ret, nil
+}
+
 type dstIndex struct {
 	t    tableInfo
 	name string
@@ -175,10 +270,12 @@ func (db *destinationDB) createIndexes(ctx context.Context, ixs []dstIndex) erro
 	return nil
 }
 
-func (db *destinationDB) insertRows(ctx context.Context, t tableInfo, input <-chan rowdata) error {
-	_, err := db.db.Exec(fmt.Sprintf(`TRUNCATE TABLE "%s"."%s"`, t.schema, t.name))
-	if err != nil {
-		return fmt.Errorf("truncate table: %w", err)
+func (db *destinationDB) insertRows(ctx context.Context, t tableInfo, truncateFirst bool, input <-chan rowdata) error {
+	if truncateFirst {
+		_, err := db.db.Exec(fmt.Sprintf(`TRUNCATE TABLE "%s"."%s"`, t.schema, t.name))
+		if err != nil {
+			return fmt.Errorf("truncate table: %w", err)
+		}
 	}
 
 	var (
@@ -186,6 +283,7 @@ func (db *destinationDB) insertRows(ctx context.Context, t tableInfo, input <-ch
 		stmt *sqlx.Stmt
 		cols []string
 		vals []any
+		err  error
 	)
 
 	count := 0

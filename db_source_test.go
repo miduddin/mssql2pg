@@ -185,7 +185,7 @@ func Test_sourceDB_readRows(t *testing.T) {
 		initDB(t)
 		ch := make(chan rowdata, 2)
 
-		err := srcDB.readRows(context.Background(), table, ch)
+		err := srcDB.readRows(context.Background(), table, nil, ch)
 
 		assert.NoError(t, err)
 
@@ -229,7 +229,7 @@ func Test_sourceDB_readRows(t *testing.T) {
 		wait := make(chan struct{})
 
 		go func() {
-			err := srcDB.readRows(ctx, table, ch)
+			err := srcDB.readRows(ctx, table, nil, ch)
 
 			assert.EqualError(t, err, "data read aborted, reason: context canceled")
 			close(wait)
@@ -238,6 +238,86 @@ func Test_sourceDB_readRows(t *testing.T) {
 		time.Sleep(50 * time.Millisecond)
 		cancel()
 		<-wait
+	})
+
+	t.Run("able to read from the middle of data for table with single column PK", func(t *testing.T) {
+		initDB(t)
+		srcDB.db.MustExec(`
+			CREATE TABLE test.other_table (
+				id  INT PRIMARY KEY,
+				val INT
+			);
+			INSERT INTO test.other_table VALUES
+				(2, 3),
+				(1, 4);
+		`)
+		t.Cleanup(func() {
+			srcDB.db.MustExec("DROP TABLE test.other_table")
+		})
+		ch := make(chan rowdata, 2)
+
+		err := srcDB.readRows(context.Background(), tableInfo{schema: "test", name: "other_table"}, rowdata{"id": 1}, ch)
+
+		assert.NoError(t, err)
+
+		var rows []rowdata
+		close(ch)
+		for rd := range ch {
+			rows = append(rows, rd)
+		}
+
+		assert.Equal(t, []rowdata{{"id": int64(2), "val": int64(3)}}, rows)
+
+		ch = make(chan rowdata, 2)
+
+		err = srcDB.readRows(context.Background(), tableInfo{schema: "test", name: "other_table"}, rowdata{"id": 2}, ch)
+
+		assert.NoError(t, err)
+
+		rows = []rowdata{}
+		close(ch)
+		for rd := range ch {
+			rows = append(rows, rd)
+		}
+
+		assert.Empty(t, rows)
+	})
+
+	t.Run("always read data from the beginning when table has multi column PK", func(t *testing.T) {
+		initDB(t)
+		srcDB.db.MustExec(`
+			CREATE TABLE test.other_table (
+				id  INT,
+				val INT,
+
+				PRIMARY KEY (id, val)
+			);
+			INSERT INTO test.other_table VALUES
+				(2, 3),
+				(1, 4);
+		`)
+		t.Cleanup(func() {
+			srcDB.db.MustExec("DROP TABLE test.other_table")
+		})
+		ch := make(chan rowdata, 2)
+
+		err := srcDB.readRows(context.Background(), tableInfo{schema: "test", name: "other_table"}, rowdata{"id": 1, "val": 4}, ch)
+
+		assert.NoError(t, err)
+
+		var rows []rowdata
+		close(ch)
+		for rd := range ch {
+			rows = append(rows, rd)
+		}
+
+		assert.Equal(t,
+			[]rowdata{
+				{"id": int64(1), "val": int64(4)},
+				{"id": int64(2), "val": int64(3)},
+			},
+			rows,
+		)
 	})
 }
 

@@ -188,7 +188,7 @@ func Test_metaDB_saveChangeTrackingVersion(t *testing.T) {
 	})
 }
 
-func Test_metaDB_getInitialCopyProgress(t *testing.T) {
+func Test_metaDB_isInitialCopyDone(t *testing.T) {
 	_, _, metaDB := openTestDB(t)
 	table := tableInfo{schema: "test", name: "some_table"}
 
@@ -207,12 +207,12 @@ func Test_metaDB_getInitialCopyProgress(t *testing.T) {
 	t.Run("retrieves data for known tables without modifying data", func(t *testing.T) {
 		initDB(t)
 
-		done, err := metaDB.getInitialCopyProgress(table)
+		done, err := metaDB.isInitialCopyDone(table)
 
 		assert.NoError(t, err)
 		assert.Equal(t, true, done)
 
-		done, err = metaDB.getInitialCopyProgress(tableInfo{schema: "test", name: "more_table"})
+		done, err = metaDB.isInitialCopyDone(tableInfo{schema: "test", name: "more_table"})
 
 		assert.NoError(t, err)
 		assert.Equal(t, false, done)
@@ -229,7 +229,7 @@ func Test_metaDB_getInitialCopyProgress(t *testing.T) {
 	t.Run("inserts new row for unknown table", func(t *testing.T) {
 		initDB(t)
 
-		done, err := metaDB.getInitialCopyProgress(tableInfo{schema: "test", name: "other_table"})
+		done, err := metaDB.isInitialCopyDone(tableInfo{schema: "test", name: "other_table"})
 
 		assert.NoError(t, err)
 		assert.Equal(t, false, done)

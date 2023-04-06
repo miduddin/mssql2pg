@@ -82,8 +82,19 @@ func (cmd *cmdReplicate) start(ctx context.Context) error {
 			return fmt.Errorf("save change tracking current version: %w", err)
 		}
 
-		if err := cmd.copyInitial(ctx, t); err != nil {
-			return fmt.Errorf("initial table copy: %w", err)
+		// Auto retry initial table copy error
+		for {
+			err := cmd.copyInitial(ctx, t)
+			if errors.Is(err, context.Canceled) {
+				return fmt.Errorf("initial table copy: %w", err)
+			}
+			if err != nil {
+				log.Err(err).Msgf("Initial table copy error (will retry)")
+				time.Sleep(5 * time.Minute)
+				continue
+			}
+
+			break
 		}
 
 		log.Info().Msgf("[%s] Initial table copy complete, tracking changes in background...", t)
@@ -136,7 +147,7 @@ func (t tableInfo) String() string {
 }
 
 func (cmd *cmdReplicate) copyInitial(ctx context.Context, t tableInfo) error {
-	done, err := cmd.metaDB.getInitialCopyProgress(t)
+	done, err := cmd.metaDB.isInitialCopyDone(t)
 	if err != nil {
 		return fmt.Errorf("get last initial copy progress: %w", err)
 	}
@@ -144,6 +155,11 @@ func (cmd *cmdReplicate) copyInitial(ctx context.Context, t tableInfo) error {
 	if done {
 		log.Info().Msgf("[%s] Initial table copy already done.", t)
 		return nil
+	}
+
+	lastRowPKs, err := cmd.dstDB.getLastRowByPK(cmd.dstTable(t))
+	if err != nil {
+		return fmt.Errorf("get last inserted row: %w", err)
 	}
 
 	log.Info().Msgf("[%s] Starting initial table copy...", t)
@@ -161,7 +177,7 @@ func (cmd *cmdReplicate) copyInitial(ctx context.Context, t tableInfo) error {
 	wg.Add(2)
 
 	go func() {
-		if err := cmd.srcDB.readRows(newCtx, t, rowChan); err != nil {
+		if err := cmd.srcDB.readRows(newCtx, t, lastRowPKs, rowChan); err != nil {
 			errChan <- err
 			cancel()
 		}
@@ -170,7 +186,10 @@ func (cmd *cmdReplicate) copyInitial(ctx context.Context, t tableInfo) error {
 	}()
 
 	go func() {
-		if err := cmd.dstDB.insertRows(newCtx, cmd.dstTable(t), rowChan); err != nil {
+		// Only support resumable insert if table has single column PK.
+		// See the note inside cmd.srcDB.readRows()
+		truncateFirst := len(lastRowPKs) != 1
+		if err := cmd.dstDB.insertRows(newCtx, cmd.dstTable(t), truncateFirst, rowChan); err != nil {
 			errChan <- err
 			cancel()
 		}

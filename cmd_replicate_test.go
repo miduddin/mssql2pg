@@ -333,6 +333,41 @@ func Test_cmdReplicate_copyInitial(t *testing.T) {
 		)
 	})
 
+	t.Run("able to resume partionally done copy for single column table", func(t *testing.T) {
+		initDB(t)
+		srcDB.db.MustExec(`
+			CREATE TABLE test.more_table (
+				id UNIQUEIDENTIFIER PRIMARY KEY,
+				val INT
+			);
+			INSERT INTO test.more_table VALUES
+				('1a2b3c4d-5a6b-7c8d-9910-111213141519', 1),
+				('1a2b3c4d-5a6b-7c8d-9910-111213141518', 2);
+		`)
+		dstDB.db.MustExec(`
+			CREATE TABLE test.more_table (
+				id uuid PRIMARY KEY,
+				val INT
+			);
+			INSERT INTO test.more_table (id) VALUES
+				('1a2b3c4d-5a6b-7c8d-9910-111213141518');
+		`)
+		t.Cleanup(func() {
+			srcDB.db.MustExec("DROP TABLE test.more_table;")
+		})
+
+		err := cmd.copyInitial(context.Background(), tableInfo{schema: "test", name: "more_table"})
+
+		assert.NoError(t, err)
+		assert.Equal(t,
+			[]rowdata{
+				{"id": []byte("1a2b3c4d-5a6b-7c8d-9910-111213141518"), "val": nil},
+				{"id": []byte("1a2b3c4d-5a6b-7c8d-9910-111213141519"), "val": int64(1)},
+			},
+			getAllData(t, dstDB.db, tableInfo{schema: "test", name: "more_table"}, "id"),
+		)
+	})
+
 	t.Run("marks table as processed when initial copy is done", func(t *testing.T) {
 		initDB(t)
 

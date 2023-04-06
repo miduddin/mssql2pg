@@ -193,7 +193,7 @@ func (db *metaDB) saveChangeTrackingVersion(t tableInfo, ver int64) error {
 	return err
 }
 
-func (db *metaDB) getInitialCopyProgress(t tableInfo) (done bool, err error) {
+func (db *metaDB) isInitialCopyDone(t tableInfo) (done bool, err error) {
 	// Insert first to DB for this table, ignore error if already exist.
 	db.db.Exec(
 		`INSERT INTO replication_progress (schema_name, table_name) VALUES (?, ?)`,

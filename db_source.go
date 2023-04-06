@@ -169,16 +169,36 @@ func (db *sourceDB) enableChangeTracking(t tableInfo) error {
 	return nil
 }
 
-func (db *sourceDB) readRows(ctx context.Context, t tableInfo, output chan<- rowdata) error {
+func (db *sourceDB) readRows(ctx context.Context, t tableInfo, afterPKVal rowdata, output chan<- rowdata) error {
 	pks, err := db.getPrimaryKeys(t)
 	if err != nil {
 		return fmt.Errorf("get primary keys: %w", err)
 	}
 
-	rows, err := db.db.QueryxContext(ctx, fmt.Sprintf(
-		`SELECT * FROM [%s].[%s] WITH (NOLOCK) ORDER BY %s`,
-		t.schema, t.name, strings.Join(pks, ","),
-	))
+	orders := make([]string, len(pks))
+	for i, pk := range pks {
+		orders[i] = pk + " ASC"
+	}
+
+	var query string
+	var args []any
+
+	// Only support reading from middle of data if table has single PK column
+	// because query performance may not be good with multi column PK.
+	if len(afterPKVal) == 1 {
+		query = fmt.Sprintf(
+			`SELECT * FROM [%s].[%s] WITH (NOLOCK) WHERE %s > @p1 ORDER BY %s`,
+			t.schema, t.name, pks[0], strings.Join(orders, ","),
+		)
+		args = []any{afterPKVal[pks[0]]}
+	} else {
+		query = fmt.Sprintf(
+			`SELECT * FROM [%s].[%s] WITH (NOLOCK) ORDER BY %s`,
+			t.schema, t.name, strings.Join(orders, ","),
+		)
+	}
+
+	rows, err := db.db.QueryxContext(ctx, query, args...)
 	if err != nil {
 		return fmt.Errorf("sql query: %w", err)
 	}
