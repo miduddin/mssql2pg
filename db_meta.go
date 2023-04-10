@@ -1,6 +1,7 @@
 package main
 
 import (
+	"database/sql"
 	"fmt"
 
 	"github.com/jmoiron/sqlx"
@@ -12,6 +13,7 @@ CREATE TABLE IF NOT EXISTS replication_progress (
 	schema_name                  TEXT NOT NULL,
 	table_name                   TEXT NOT NULL,
 	initial_copy_done            INT  NOT NULL DEFAULT 0,
+	initial_copy_last_id         TEXT,
 	change_tracking_last_version INT  NOT NULL DEFAULT 0,
 
 	PRIMARY KEY (schema_name, table_name)
@@ -193,24 +195,35 @@ func (db *metaDB) saveChangeTrackingVersion(t tableInfo, ver int64) error {
 	return err
 }
 
-func (db *metaDB) isInitialCopyDone(t tableInfo) (done bool, err error) {
+func (db *metaDB) getInitialCopyStatus(t tableInfo) (done bool, lastID string, err error) {
 	// Insert first to DB for this table, ignore error if already exist.
 	db.db.Exec(
 		`INSERT INTO replication_progress (schema_name, table_name) VALUES (?, ?)`,
 		t.schema, t.name,
 	)
 
+	var ns sql.NullString
 	err = db.db.QueryRowx(
-		`SELECT initial_copy_done
+		`SELECT initial_copy_done, initial_copy_last_id
 		FROM replication_progress
 		WHERE schema_name = ? AND table_name = ?`,
 		t.schema, t.name,
-	).Scan(&done)
+	).Scan(&done, &ns)
 	if err != nil {
-		return false, fmt.Errorf("sql select: %w", err)
+		return false, "", fmt.Errorf("sql select: %w", err)
 	}
 
-	return done, nil
+	return done, ns.String, nil
+}
+
+func (db *metaDB) updateInitialCopyLastID(t tableInfo, id any) error {
+	_, err := db.db.Exec(
+		`UPDATE replication_progress
+		SET initial_copy_last_id = ?
+		WHERE schema_name = ? AND table_name = ?`,
+		id, t.schema, t.name,
+	)
+	return err
 }
 
 func (db *metaDB) markInitialCopyDone(t tableInfo) error {

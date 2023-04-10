@@ -333,7 +333,7 @@ func Test_cmdReplicate_copyInitial(t *testing.T) {
 		)
 	})
 
-	t.Run("able to resume partionally done copy for single column table", func(t *testing.T) {
+	t.Run("able to resume partionally done copy for single column table (uuid PK)", func(t *testing.T) {
 		initDB(t)
 		srcDB.db.MustExec(`
 			CREATE TABLE test.more_table (
@@ -341,28 +341,65 @@ func Test_cmdReplicate_copyInitial(t *testing.T) {
 				val INT
 			);
 			INSERT INTO test.more_table VALUES
-				('1a2b3c4d-5a6b-7c8d-9910-111213141519', 1),
+				('1a2b3c4c-5a6b-7c8d-9910-111213141519', 1),
 				('1a2b3c4d-5a6b-7c8d-9910-111213141518', 2);
 		`)
+		t.Cleanup(func() {
+			srcDB.db.MustExec("DROP TABLE test.more_table")
+		})
 		dstDB.db.MustExec(`
 			CREATE TABLE test.more_table (
 				id uuid PRIMARY KEY,
 				val INT
 			);
-			INSERT INTO test.more_table (id) VALUES
-				('1a2b3c4d-5a6b-7c8d-9910-111213141518');
 		`)
-		t.Cleanup(func() {
-			srcDB.db.MustExec("DROP TABLE test.more_table;")
-		})
+		metaDB.db.MustExec(`
+			INSERT INTO replication_progress (schema_name, table_name, initial_copy_last_id)
+			VALUES ('test', 'more_table', '1a2b3c4d-5a6b-7c8d-9910-111213141518')
+		`)
 
 		err := cmd.copyInitial(context.Background(), tableInfo{schema: "test", name: "more_table"})
 
 		assert.NoError(t, err)
 		assert.Equal(t,
 			[]rowdata{
-				{"id": []byte("1a2b3c4d-5a6b-7c8d-9910-111213141518"), "val": nil},
-				{"id": []byte("1a2b3c4d-5a6b-7c8d-9910-111213141519"), "val": int64(1)},
+				{"id": []byte("1a2b3c4c-5a6b-7c8d-9910-111213141519"), "val": int64(1)},
+			},
+			getAllData(t, dstDB.db, tableInfo{schema: "test", name: "more_table"}, "id"),
+		)
+	})
+
+	t.Run("able to resume partionally done copy for single column table (int PK)", func(t *testing.T) {
+		initDB(t)
+		srcDB.db.MustExec(`
+			CREATE TABLE test.more_table (
+				id INT PRIMARY KEY,
+				val INT
+			);
+			INSERT INTO test.more_table VALUES
+				(2, 3),
+				(1, 4);
+		`)
+		t.Cleanup(func() {
+			srcDB.db.MustExec("DROP TABLE test.more_table")
+		})
+		dstDB.db.MustExec(`
+			CREATE TABLE test.more_table (
+				id int PRIMARY KEY,
+				val int
+			);
+		`)
+		metaDB.db.MustExec(`
+			INSERT INTO replication_progress (schema_name, table_name, initial_copy_last_id)
+			VALUES ('test', 'more_table', 1)
+		`)
+
+		err := cmd.copyInitial(context.Background(), tableInfo{schema: "test", name: "more_table"})
+
+		assert.NoError(t, err)
+		assert.Equal(t,
+			[]rowdata{
+				{"id": int64(2), "val": int64(3)},
 			},
 			getAllData(t, dstDB.db, tableInfo{schema: "test", name: "more_table"}, "id"),
 		)
@@ -382,6 +419,7 @@ func Test_cmdReplicate_copyInitial(t *testing.T) {
 					"table_name":                   "some_table",
 					"change_tracking_last_version": int64(0),
 					"initial_copy_done":            int64(1),
+					"initial_copy_last_id":         nil,
 				},
 			},
 			getAllData(t, metaDB.db, tableInfo{name: "replication_progress"}, "table_name"),
@@ -688,9 +726,9 @@ func Test_cmdReplicate_copyChangeTracking(t *testing.T) {
 
 		assert.Equal(t,
 			[]rowdata{
-				{"schema_name": "s1", "table_name": "t1", "initial_copy_done": int64(0), "change_tracking_last_version": ver},
-				{"schema_name": "s1", "table_name": "t2", "initial_copy_done": int64(0), "change_tracking_last_version": ver},
-				{"schema_name": "s2", "table_name": "t3", "initial_copy_done": int64(0), "change_tracking_last_version": ver},
+				{"schema_name": "s1", "table_name": "t1", "initial_copy_done": int64(0), "initial_copy_last_id": nil, "change_tracking_last_version": ver},
+				{"schema_name": "s1", "table_name": "t2", "initial_copy_done": int64(0), "initial_copy_last_id": nil, "change_tracking_last_version": ver},
+				{"schema_name": "s2", "table_name": "t3", "initial_copy_done": int64(0), "initial_copy_last_id": nil, "change_tracking_last_version": ver},
 			},
 			getAllData(t, metaDB.db, tableInfo{name: "replication_progress"}, "table_name"),
 		)

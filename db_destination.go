@@ -2,12 +2,9 @@ package main
 
 import (
 	"context"
-	"database/sql"
-	"errors"
 	"fmt"
 	"os"
 	"regexp"
-	"strconv"
 	"strings"
 
 	"github.com/jmoiron/sqlx"
@@ -116,59 +113,6 @@ func (db *destinationDB) createForeignKeys(fks []dstForeignKey) error {
 	return nil
 }
 
-func (db *destinationDB) getLastRowByPK(t tableInfo) (rowdata, error) {
-	pks, err := db.getPrimaryKeys(t)
-	if err != nil {
-		return nil, fmt.Errorf("get primary keys: %w", err)
-	}
-
-	orders := make([]string, len(pks))
-	for i, pk := range pks {
-		orders[i] = pk + " DESC"
-	}
-
-	row := db.db.QueryRowx(fmt.Sprintf(
-		`SELECT %s FROM "%s"."%s" ORDER BY %s LIMIT 1`,
-		strings.Join(pks, ","), t.schema, t.name, strings.Join(orders, ","),
-	))
-
-	cols, err := row.ColumnTypes()
-	if err != nil {
-		return nil, fmt.Errorf("read column types: %w", err)
-	}
-
-	vals, err := row.SliceScan()
-	if errors.Is(err, sql.ErrNoRows) {
-		return nil, nil
-	}
-	if err != nil {
-		return nil, fmt.Errorf("sql select: %w", err)
-	}
-
-	ret := rowdata{}
-	for i, col := range cols {
-		ret[col.Name()] = db.fixValueByType(vals[i], col)
-	}
-
-	return ret, nil
-}
-
-func (db *destinationDB) fixValueByType(v any, ct *sql.ColumnType) any {
-	if v == nil {
-		return nil
-	}
-
-	switch ct.DatabaseTypeName() {
-	case "UUID":
-		return string(v.([]byte))
-	case "NUMERIC":
-		v, _ := strconv.ParseFloat(string(v.([]byte)), 64)
-		return v
-	default:
-		return v
-	}
-}
-
 func (db *destinationDB) getPrimaryKeys(t tableInfo) ([]string, error) {
 	tableName := t.name
 	if t.schema != "public" {
@@ -269,12 +213,17 @@ func (db *destinationDB) createIndexes(ctx context.Context, ixs []dstIndex) erro
 	return nil
 }
 
-func (db *destinationDB) insertRows(ctx context.Context, t tableInfo, truncateFirst bool, batchSize uint, input <-chan rowdata) error {
+func (db *destinationDB) insertRows(ctx context.Context, t tableInfo, truncateFirst bool, batchSize uint, input <-chan rowdata) (lastInsertedID any, err error) {
 	if truncateFirst {
 		_, err := db.db.Exec(fmt.Sprintf(`TRUNCATE TABLE "%s"."%s"`, t.schema, t.name))
 		if err != nil {
-			return fmt.Errorf("truncate table: %w", err)
+			return nil, fmt.Errorf("truncate table: %w", err)
 		}
+	}
+
+	pks, err := db.getPrimaryKeys(t)
+	if err != nil {
+		return nil, fmt.Errorf("get primary keys: %w", err)
 	}
 
 	var (
@@ -282,9 +231,9 @@ func (db *destinationDB) insertRows(ctx context.Context, t tableInfo, truncateFi
 		stmt *sqlx.Stmt
 		cols []string
 		vals []any
-		err  error
 	)
 
+	var lastTempInsertedID any
 	var count uint = 0
 	for {
 		select {
@@ -295,16 +244,17 @@ func (db *destinationDB) insertRows(ctx context.Context, t tableInfo, truncateFi
 				// stmt can be nil when input is empty.
 				if stmt != nil {
 					if _, err := stmt.ExecContext(ctx); err != nil {
-						return fmt.Errorf("flush copy: %w", err)
+						return lastInsertedID, fmt.Errorf("flush copy: %w", err)
 					}
 
 					if err := tx.Commit(); err != nil {
-						return fmt.Errorf("commit tx: %w", err)
+						return lastInsertedID, fmt.Errorf("commit tx: %w", err)
 					}
+					lastInsertedID = lastTempInsertedID
 				}
 
 				if !ok {
-					return nil
+					return lastInsertedID, nil
 				}
 
 				stmt.Close()
@@ -317,7 +267,7 @@ func (db *destinationDB) insertRows(ctx context.Context, t tableInfo, truncateFi
 			if tx == nil {
 				tx, err = db.db.Beginx()
 				if err != nil {
-					return fmt.Errorf("begin tx: %w", err)
+					return lastInsertedID, fmt.Errorf("begin tx: %w", err)
 				}
 				defer tx.Rollback()
 			}
@@ -330,7 +280,7 @@ func (db *destinationDB) insertRows(ctx context.Context, t tableInfo, truncateFi
 
 				stmt, err = tx.PreparexContext(ctx, pq.CopyInSchema(t.schema, t.name, cols...))
 				if err != nil {
-					return fmt.Errorf("prepare statement: %w", err)
+					return lastInsertedID, fmt.Errorf("prepare statement: %w", err)
 				}
 				defer stmt.Close()
 			}
@@ -340,11 +290,14 @@ func (db *destinationDB) insertRows(ctx context.Context, t tableInfo, truncateFi
 			}
 
 			if _, err := stmt.ExecContext(ctx, vals...); err != nil {
-				return fmt.Errorf("exec statement: %w", err)
+				return lastInsertedID, fmt.Errorf("exec statement: %w", err)
+			}
+			if len(pks) == 1 {
+				lastTempInsertedID = rd[pks[0]]
 			}
 
 		case <-ctx.Done():
-			return fmt.Errorf("insert data aborted, reason: %w", ctx.Err())
+			return lastInsertedID, fmt.Errorf("insert data aborted, reason: %w", ctx.Err())
 		}
 	}
 }

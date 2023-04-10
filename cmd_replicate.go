@@ -159,7 +159,7 @@ func (t tableInfo) String() string {
 }
 
 func (cmd *cmdReplicate) copyInitial(ctx context.Context, t tableInfo) error {
-	done, err := cmd.metaDB.isInitialCopyDone(t)
+	done, lastInsertedID, err := cmd.metaDB.getInitialCopyStatus(t)
 	if err != nil {
 		return fmt.Errorf("get last initial copy progress: %w", err)
 	}
@@ -169,9 +169,16 @@ func (cmd *cmdReplicate) copyInitial(ctx context.Context, t tableInfo) error {
 		return nil
 	}
 
-	lastRowPKs, err := cmd.dstDB.getLastRowByPK(cmd.dstTable(t))
+	pks, err := cmd.dstDB.getPrimaryKeys(cmd.dstTable(t))
 	if err != nil {
-		return fmt.Errorf("get last inserted row: %w", err)
+		return fmt.Errorf("get table primary keys: %w", err)
+	}
+
+	// Only support resumable insert if table has single column PK.
+	// See the note inside cmd.srcDB.readRows()
+	var lastCopiedID rowdata
+	if len(pks) == 1 && lastInsertedID != "" {
+		lastCopiedID = rowdata{pks[0]: lastInsertedID}
 	}
 
 	log.Info().Msgf("[%s] Starting initial table copy...", t)
@@ -189,7 +196,7 @@ func (cmd *cmdReplicate) copyInitial(ctx context.Context, t tableInfo) error {
 	wg.Add(2)
 
 	go func() {
-		if err := cmd.srcDB.readRows(newCtx, t, lastRowPKs, rowChan); err != nil {
+		if err := cmd.srcDB.readRows(newCtx, t, lastCopiedID, rowChan); err != nil {
 			errChan <- err
 			cancel()
 		}
@@ -198,13 +205,18 @@ func (cmd *cmdReplicate) copyInitial(ctx context.Context, t tableInfo) error {
 	}()
 
 	go func() {
-		// Only support resumable insert if table has single column PK.
-		// See the note inside cmd.srcDB.readRows()
-		truncateFirst := len(lastRowPKs) != 1
-		if err := cmd.dstDB.insertRows(newCtx, cmd.dstTable(t), truncateFirst, cmd.initialCopyBatchSize, rowChan); err != nil {
+		lastID, err := cmd.dstDB.insertRows(newCtx, cmd.dstTable(t), lastCopiedID == nil, cmd.initialCopyBatchSize, rowChan)
+		if err != nil {
 			errChan <- err
 			cancel()
 		}
+
+		if lastID != nil {
+			if err := cmd.metaDB.updateInitialCopyLastID(t, lastID); err != nil {
+				log.Err(err).Msgf("[%s] Error saving last inserted ID to meta DB.", t)
+			}
+		}
+
 		wg.Done()
 	}()
 

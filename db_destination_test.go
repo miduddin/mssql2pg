@@ -115,60 +115,6 @@ func Test_destinationDB_dropForeignKeys(t *testing.T) {
 	})
 }
 
-func Test_destinationDB_getLastRowByPK(t *testing.T) {
-	_, dstDB, _ := openTestDB(t)
-
-	initDB := func(t *testing.T) {
-		dstDB.db.MustExec(`
-			CREATE SCHEMA test;
-			CREATE TABLE test.table1 (
-				id1 uuid,
-				id2 text,
-				id3 int,
-				id4 numeric(2,0),
-				id5 decimal,
-				val int,
-
-				PRIMARY KEY (id2, id1, id3, id4, id5)
-			);
-
-			INSERT INTO test.table1 VALUES
-				('1a2b3c4d-5a6b-7c8d-9910-111213141517', 'bar', 2, 20, 30, 11),
-				('1a2b3c4d-5a6b-7c8d-9910-111213141518', 'foo', 1, 21, 31, 12),
-				('1a2b3c4d-5a6b-7c8d-9910-111213141519', 'bar', 5, 22, 32, 13);
-
-			CREATE TABLE test.table2 (
-				id int PRIMARY KEY,
-				val int
-			);
-		`)
-
-		t.Cleanup(func() {
-			dstDB.db.MustExec(`
-				DROP SCHEMA test CASCADE;
-			`)
-		})
-	}
-
-	t.Run("returns last row's primary key values, ordered by primary keys", func(t *testing.T) {
-		initDB(t)
-
-		res, err := dstDB.getLastRowByPK(tableInfo{schema: "test", name: "table1"})
-
-		assert.NoError(t, err)
-		assert.Equal(t, rowdata{"id1": "1a2b3c4d-5a6b-7c8d-9910-111213141518", "id2": "foo", "id3": int64(1), "id4": float64(21), "id5": float64(31)}, res)
-	})
-
-	t.Run("returns nil if table is empty", func(t *testing.T) {
-		initDB(t)
-
-		res, err := dstDB.getLastRowByPK(tableInfo{schema: "test", name: "table2"})
-
-		assert.NoError(t, err)
-		assert.Nil(t, res)
-	})
-}
-
 func Test_destinationDB_getPrimaryKeys(t *testing.T) {
 	_, dstDB, _ := openTestDB(t)
 
@@ -435,7 +381,7 @@ func Test_destinationDB_insertRows(t *testing.T) {
 		}
 		close(ch)
 
-		err := dstDB.insertRows(context.Background(), table, true, 10, ch)
+		_, err := dstDB.insertRows(context.Background(), table, true, 10, ch)
 
 		assert.NoError(t, err)
 		assert.Equal(t,
@@ -472,7 +418,7 @@ func Test_destinationDB_insertRows(t *testing.T) {
 		wait := make(chan struct{})
 
 		go func() {
-			err := dstDB.insertRows(ctx, table, true, 10, ch)
+			_, err := dstDB.insertRows(ctx, table, true, 10, ch)
 
 			assert.EqualError(t, err, "insert data aborted, reason: context canceled")
 			close(wait)
@@ -489,7 +435,7 @@ func Test_destinationDB_insertRows(t *testing.T) {
 		ch := make(chan rowdata, 3)
 		close(ch)
 
-		err := dstDB.insertRows(context.Background(), table, true, 10, ch)
+		_, err := dstDB.insertRows(context.Background(), table, true, 10, ch)
 
 		assert.NoError(t, err)
 		assert.Equal(t,
@@ -509,7 +455,7 @@ func Test_destinationDB_insertRows(t *testing.T) {
 			close(ch)
 		}()
 
-		err := dstDB.insertRows(context.Background(), tableInfo{schema: "test", name: "more_table"}, true, 100, ch)
+		_, err := dstDB.insertRows(context.Background(), tableInfo{schema: "test", name: "more_table"}, true, 100, ch)
 
 		assert.NoError(t, err)
 
@@ -546,7 +492,7 @@ func Test_destinationDB_insertRows(t *testing.T) {
 		}
 		close(ch)
 
-		err := dstDB.insertRows(context.Background(), table, false, 10, ch)
+		_, err := dstDB.insertRows(context.Background(), table, false, 10, ch)
 
 		assert.NoError(t, err)
 		assert.Equal(t,
@@ -584,6 +530,52 @@ func Test_destinationDB_insertRows(t *testing.T) {
 			},
 			getAllData(t, dstDB.db, table, "id1 ASC, id2 ASC"),
 		)
+	})
+
+	t.Run("does not last inserted ID if table has multi column PK", func(t *testing.T) {
+		initDB(t)
+		ch := make(chan rowdata, 3)
+		ch <- rowdata{
+			"id1":  "1a2b3c4d-5a6b-7c8d-9910-111213141516",
+			"id2":  1,
+			"val1": "foo",
+			"val2": 2,
+			"val3": time.Date(2020, 1, 2, 0, 0, 0, 0, time.UTC),
+			"val4": time.Date(2020, 1, 2, 0, 0, 0, 0, time.UTC),
+			"val5": time.Date(2020, 1, 2, 15, 4, 5, 0, time.UTC),
+			"val6": "A",
+		}
+		ch <- rowdata{
+			"id1":  "1a2b3c4d-5a6b-7c8d-9910-111213141517",
+			"id2":  3,
+			"val1": "bar",
+			"val2": 4,
+			"val3": time.Date(2020, 1, 3, 0, 0, 0, 0, time.UTC),
+			"val4": time.Date(2020, 1, 3, 0, 0, 0, 0, time.UTC),
+			"val5": time.Date(2020, 1, 3, 15, 4, 5, 0, time.UTC),
+			"val6": "B",
+		}
+		close(ch)
+
+		lastID, err := dstDB.insertRows(context.Background(), table, true, 10, ch)
+
+		assert.NoError(t, err)
+		assert.Nil(t, lastID)
+	})
+
+	t.Run("returns last inserted ID if table has single column PK", func(t *testing.T) {
+		initDB(t)
+		dstDB.db.MustExec("CREATE TABLE test.more_table(id uuid PRIMARY KEY, val text)")
+
+		ch := make(chan rowdata, 3)
+		ch <- rowdata{"id": "1a2b3c4d-5a6b-7c8d-9910-111213141517", "val": "foo"}
+		ch <- rowdata{"id": "1a2b3c4d-5a6b-7c8d-9910-111213141516", "val": "bar"}
+		close(ch)
+
+		lastID, err := dstDB.insertRows(context.Background(), tableInfo{schema: "test", name: "more_table"}, true, 10, ch)
+
+		assert.NoError(t, err)
+		assert.Equal(t, "1a2b3c4d-5a6b-7c8d-9910-111213141516", lastID)
 	})
 }
 

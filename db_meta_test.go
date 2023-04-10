@@ -156,12 +156,14 @@ func Test_metaDB_saveChangeTrackingVersion(t *testing.T) {
 					"table_name":                   "bar",
 					"change_tracking_last_version": int64(13),
 					"initial_copy_done":            int64(0),
+					"initial_copy_last_id":         nil,
 				},
 				{
 					"schema_name":                  "test",
 					"table_name":                   "some_table",
 					"change_tracking_last_version": int64(42),
 					"initial_copy_done":            int64(0),
+					"initial_copy_last_id":         nil,
 				},
 			},
 			getAllData(t, metaDB.db, tableInfo{name: "replication_progress"}, "table_name"),
@@ -181,6 +183,7 @@ func Test_metaDB_saveChangeTrackingVersion(t *testing.T) {
 					"table_name":                   "some_table",
 					"change_tracking_last_version": int64(13),
 					"initial_copy_done":            int64(0),
+					"initial_copy_last_id":         nil,
 				},
 			},
 			getAllData(t, metaDB.db, tableInfo{name: "replication_progress"}, "table_name"),
@@ -188,15 +191,15 @@ func Test_metaDB_saveChangeTrackingVersion(t *testing.T) {
 	})
 }
 
-func Test_metaDB_isInitialCopyDone(t *testing.T) {
+func Test_metaDB_getInitialCopyStatus(t *testing.T) {
 	_, _, metaDB := openTestDB(t)
 	table := tableInfo{schema: "test", name: "some_table"}
 
 	initDB := func(t *testing.T) {
 		metaDB.db.MustExec(`
-			INSERT INTO replication_progress (schema_name, table_name, initial_copy_done) VALUES
-				('test', 'some_table', 1),
-				('test', 'more_table', 0);
+			INSERT INTO replication_progress (schema_name, table_name, initial_copy_done, initial_copy_last_id) VALUES
+				('test', 'some_table', 1, '42'),
+				('test', 'more_table', 0, NULL);
 		`)
 
 		t.Cleanup(func() {
@@ -207,20 +210,22 @@ func Test_metaDB_isInitialCopyDone(t *testing.T) {
 	t.Run("retrieves data for known tables without modifying data", func(t *testing.T) {
 		initDB(t)
 
-		done, err := metaDB.isInitialCopyDone(table)
+		done, lastID, err := metaDB.getInitialCopyStatus(table)
 
 		assert.NoError(t, err)
 		assert.Equal(t, true, done)
+		assert.Equal(t, "42", lastID)
 
-		done, err = metaDB.isInitialCopyDone(tableInfo{schema: "test", name: "more_table"})
+		done, lastID, err = metaDB.getInitialCopyStatus(tableInfo{schema: "test", name: "more_table"})
 
 		assert.NoError(t, err)
 		assert.Equal(t, false, done)
+		assert.Equal(t, "", lastID)
 
 		assert.Equal(t,
 			[]rowdata{
-				{"schema_name": "test", "table_name": "more_table", "initial_copy_done": int64(0), "change_tracking_last_version": int64(0)},
-				{"schema_name": "test", "table_name": "some_table", "initial_copy_done": int64(1), "change_tracking_last_version": int64(0)},
+				{"schema_name": "test", "table_name": "more_table", "initial_copy_done": int64(0), "initial_copy_last_id": nil, "change_tracking_last_version": int64(0)},
+				{"schema_name": "test", "table_name": "some_table", "initial_copy_done": int64(1), "initial_copy_last_id": "42", "change_tracking_last_version": int64(0)},
 			},
 			getAllData(t, metaDB.db, tableInfo{name: "replication_progress"}, "table_name"),
 		)
@@ -229,16 +234,17 @@ func Test_metaDB_isInitialCopyDone(t *testing.T) {
 	t.Run("inserts new row for unknown table", func(t *testing.T) {
 		initDB(t)
 
-		done, err := metaDB.isInitialCopyDone(tableInfo{schema: "test", name: "other_table"})
+		done, lastID, err := metaDB.getInitialCopyStatus(tableInfo{schema: "test", name: "other_table"})
 
 		assert.NoError(t, err)
 		assert.Equal(t, false, done)
+		assert.Equal(t, "", lastID)
 
 		assert.Equal(t,
 			[]rowdata{
-				{"schema_name": "test", "table_name": "more_table", "initial_copy_done": int64(0), "change_tracking_last_version": int64(0)},
-				{"schema_name": "test", "table_name": "other_table", "initial_copy_done": int64(0), "change_tracking_last_version": int64(0)},
-				{"schema_name": "test", "table_name": "some_table", "initial_copy_done": int64(1), "change_tracking_last_version": int64(0)},
+				{"schema_name": "test", "table_name": "more_table", "initial_copy_done": int64(0), "initial_copy_last_id": nil, "change_tracking_last_version": int64(0)},
+				{"schema_name": "test", "table_name": "other_table", "initial_copy_done": int64(0), "initial_copy_last_id": nil, "change_tracking_last_version": int64(0)},
+				{"schema_name": "test", "table_name": "some_table", "initial_copy_done": int64(1), "initial_copy_last_id": "42", "change_tracking_last_version": int64(0)},
 			},
 			getAllData(t, metaDB.db, tableInfo{name: "replication_progress"}, "table_name"),
 		)
@@ -265,7 +271,7 @@ func Test_metaDB_markInitialCopyDone(t *testing.T) {
 		assert.NoError(t, err)
 		assert.Equal(t,
 			[]rowdata{
-				{"schema_name": "test", "table_name": "some_table", "initial_copy_done": int64(1), "change_tracking_last_version": int64(0)},
+				{"schema_name": "test", "table_name": "some_table", "initial_copy_done": int64(1), "initial_copy_last_id": nil, "change_tracking_last_version": int64(0)},
 			},
 			getAllData(t, metaDB.db, tableInfo{name: "replication_progress"}, "table_name"),
 		)
@@ -279,7 +285,7 @@ func Test_metaDB_markInitialCopyDone(t *testing.T) {
 		assert.NoError(t, err)
 		assert.Equal(t,
 			[]rowdata{
-				{"schema_name": "test", "table_name": "some_table", "initial_copy_done": int64(0), "change_tracking_last_version": int64(0)},
+				{"schema_name": "test", "table_name": "some_table", "initial_copy_done": int64(0), "initial_copy_last_id": nil, "change_tracking_last_version": int64(0)},
 			},
 			getAllData(t, metaDB.db, tableInfo{name: "replication_progress"}, "table_name"),
 		)
