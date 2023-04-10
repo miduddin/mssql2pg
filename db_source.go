@@ -180,7 +180,7 @@ func (db *sourceDB) enableChangeTracking(t tableInfo, retentionDays uint) error 
 	return nil
 }
 
-func (db *sourceDB) readRows(ctx context.Context, t tableInfo, afterPKVal rowdata, output chan<- rowdata) error {
+func (db *sourceDB) readRowsWithPK(ctx context.Context, t tableInfo, afterPK any, output chan<- rowdata) error {
 	pks, err := db.getPrimaryKeys(t)
 	if err != nil {
 		return fmt.Errorf("get primary keys: %w", err)
@@ -194,14 +194,18 @@ func (db *sourceDB) readRows(ctx context.Context, t tableInfo, afterPKVal rowdat
 	var query string
 	var args []any
 
-	// Only support reading from middle of data if table has single PK column
-	// because query performance may not be good with multi column PK.
-	if len(afterPKVal) == 1 {
+	if afterPK != nil {
+		// Only support reading from the middle of data if table has single PK column
+		// because query performance may not be good with multi column PK.
+		if len(pks) != 1 {
+			return fmt.Errorf("filtered read not supported on table with multi column primary key")
+		}
+
 		query = fmt.Sprintf(
 			`SELECT * FROM [%s].[%s] WITH (NOLOCK) WHERE %s > @p1 ORDER BY %s`,
 			t.schema, t.name, pks[0], strings.Join(orders, ","),
 		)
-		args = []any{afterPKVal[pks[0]]}
+		args = []any{afterPK}
 	} else {
 		query = fmt.Sprintf(
 			`SELECT * FROM [%s].[%s] WITH (NOLOCK) ORDER BY %s`,
@@ -209,6 +213,10 @@ func (db *sourceDB) readRows(ctx context.Context, t tableInfo, afterPKVal rowdat
 		)
 	}
 
+	return db.readRows(ctx, t, output, query, args...)
+}
+
+func (db *sourceDB) readRows(ctx context.Context, t tableInfo, output chan<- rowdata, query string, args ...any) error {
 	rows, err := db.db.QueryxContext(ctx, query, args...)
 	if err != nil {
 		return fmt.Errorf("sql query: %w", err)
@@ -222,7 +230,6 @@ func (db *sourceDB) readRows(ctx context.Context, t tableInfo, afterPKVal rowdat
 
 	count, _ := db.getRowCount(t)
 
-	// From progressbar.Default()
 	bar := progressbar.NewOptions64(count,
 		progressbar.OptionThrottle(500*time.Millisecond),
 		progressbar.OptionShowCount(),

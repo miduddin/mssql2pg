@@ -154,7 +154,7 @@ func Test_sourceDB_enableChangeTracking(t *testing.T) {
 	})
 }
 
-func Test_sourceDB_readRows(t *testing.T) {
+func Test_sourceDB_readRowsWithPK(t *testing.T) {
 	srcDB, _, _ := openTestDB(t)
 	table := tableInfo{schema: "test", name: "some_table"}
 
@@ -192,7 +192,7 @@ func Test_sourceDB_readRows(t *testing.T) {
 		initDB(t)
 		ch := make(chan rowdata, 2)
 
-		err := srcDB.readRows(context.Background(), table, nil, ch)
+		err := srcDB.readRowsWithPK(context.Background(), table, nil, ch)
 
 		assert.NoError(t, err)
 
@@ -236,7 +236,7 @@ func Test_sourceDB_readRows(t *testing.T) {
 		wait := make(chan struct{})
 
 		go func() {
-			err := srcDB.readRows(ctx, table, nil, ch)
+			err := srcDB.readRowsWithPK(ctx, table, nil, ch)
 
 			assert.EqualError(t, err, "data read aborted, reason: context canceled")
 			close(wait)
@@ -263,7 +263,7 @@ func Test_sourceDB_readRows(t *testing.T) {
 		})
 		ch := make(chan rowdata, 2)
 
-		err := srcDB.readRows(context.Background(), tableInfo{schema: "test", name: "other_table"}, rowdata{"id": 1}, ch)
+		err := srcDB.readRowsWithPK(context.Background(), tableInfo{schema: "test", name: "other_table"}, 1, ch)
 
 		assert.NoError(t, err)
 
@@ -277,7 +277,7 @@ func Test_sourceDB_readRows(t *testing.T) {
 
 		ch = make(chan rowdata, 2)
 
-		err = srcDB.readRows(context.Background(), tableInfo{schema: "test", name: "other_table"}, rowdata{"id": 2}, ch)
+		err = srcDB.readRowsWithPK(context.Background(), tableInfo{schema: "test", name: "other_table"}, 2, ch)
 
 		assert.NoError(t, err)
 
@@ -290,7 +290,7 @@ func Test_sourceDB_readRows(t *testing.T) {
 		assert.Empty(t, rows)
 	})
 
-	t.Run("always read data from the beginning when table has multi column PK", func(t *testing.T) {
+	t.Run("returns error when trying to read from the middle of data when table has multi column PK", func(t *testing.T) {
 		initDB(t)
 		srcDB.db.MustExec(`
 			CREATE TABLE test.other_table (
@@ -308,23 +308,9 @@ func Test_sourceDB_readRows(t *testing.T) {
 		})
 		ch := make(chan rowdata, 2)
 
-		err := srcDB.readRows(context.Background(), tableInfo{schema: "test", name: "other_table"}, rowdata{"id": 1, "val": 4}, ch)
+		err := srcDB.readRowsWithPK(context.Background(), tableInfo{schema: "test", name: "other_table"}, 1, ch)
 
-		assert.NoError(t, err)
-
-		var rows []rowdata
-		close(ch)
-		for rd := range ch {
-			rows = append(rows, rd)
-		}
-
-		assert.Equal(t,
-			[]rowdata{
-				{"id": int64(1), "val": int64(4)},
-				{"id": int64(2), "val": int64(3)},
-			},
-			rows,
-		)
+		assert.EqualError(t, err, "filtered read not supported on table with multi column primary key")
 	})
 }
 

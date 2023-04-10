@@ -176,9 +176,9 @@ func (cmd *cmdReplicate) copyInitial(ctx context.Context, t tableInfo) error {
 
 	// Only support resumable insert if table has single column PK.
 	// See the note inside cmd.srcDB.readRows()
-	var lastCopiedID rowdata
+	var lastCopiedID any
 	if len(pks) == 1 && lastInsertedID != "" {
-		lastCopiedID = rowdata{pks[0]: lastInsertedID}
+		lastCopiedID = lastInsertedID
 	}
 
 	log.Info().Msgf("[%s] Starting initial table copy...", t)
@@ -196,7 +196,7 @@ func (cmd *cmdReplicate) copyInitial(ctx context.Context, t tableInfo) error {
 	wg.Add(2)
 
 	go func() {
-		if err := cmd.srcDB.readRows(newCtx, t, lastCopiedID, rowChan); err != nil {
+		if err := cmd.srcDB.readRowsWithPK(newCtx, t, lastCopiedID, rowChan); err != nil {
 			errChan <- err
 			cancel()
 		}
