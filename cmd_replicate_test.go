@@ -819,11 +819,9 @@ func Test_cmdReplicate_getLastValidSyncVersion(t *testing.T) {
 	})
 }
 
-func Test_cmdReplicate_dstTable(t *testing.T) {
-	cmd := newCmdReplicate(nil, nil, nil, nil, nil, 10, 1)
-
-	assert.Equal(t, tableInfo{schema: "public", name: "table1"}, cmd.dstTable(tableInfo{schema: "dbo", name: "table1"}))
-	assert.Equal(t, tableInfo{schema: "test", name: "table1"}, cmd.dstTable(tableInfo{schema: "test", name: "table1"}))
+func Test_dstTable(t *testing.T) {
+	assert.Equal(t, tableInfo{schema: "public", name: "table1"}, dstTable(tableInfo{schema: "dbo", name: "table1"}))
+	assert.Equal(t, tableInfo{schema: "test", name: "table1"}, dstTable(tableInfo{schema: "test", name: "table1"}))
 }
 
 func getAllData(t *testing.T, db *sqlx.DB, table tableInfo, order string) []rowdata {

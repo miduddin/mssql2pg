@@ -24,6 +24,8 @@ type config struct {
 
 	InitialCopyBatchSize        uint `json:"initialCopyBatchSize"`
 	ChangeTrackingRetentionDays uint `json:"changeTrackingRetentionDays"`
+
+	FullCopyTables []string `json:"fullcopyTables"`
 }
 
 func loadConfig(configPath string) (config, error) {

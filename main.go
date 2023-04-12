@@ -34,17 +34,17 @@ func main() {
 	srcDB, dstDB, metaDB, err := openDatabases(cfg)
 	exitIfErr(err)
 
+	sigs := make(chan os.Signal, 1)
+	signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM)
+	ctx, cancel := context.WithCancel(context.Background())
+
+	go func() {
+		log.Info().Msgf("Received signal %v, stopping process...", <-sigs)
+		cancel()
+	}()
+
 	switch os.Args[1] {
 	case "replicate":
-		sigs := make(chan os.Signal, 1)
-		signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM)
-		ctx, cancel := context.WithCancel(context.Background())
-
-		go func() {
-			log.Info().Msgf("Received signal %v, stopping process...", <-sigs)
-			cancel()
-		}()
-
 		cmd := newCmdReplicate(
 			srcDB, dstDB, metaDB,
 			cfg.TablesToPutLast,
@@ -61,6 +61,10 @@ func main() {
 		}
 
 		log.Err(fr.start()).Msg("Done.")
+
+	case "fullcopy":
+		cmd := newCmdFullCopy(srcDB, dstDB, metaDB, cfg.InitialCopyBatchSize, cfg.FullCopyTables)
+		log.Err(cmd.start(ctx)).Msg("Done.")
 
 	default:
 		help()
@@ -108,6 +112,8 @@ Subcommands:
 	replicate	Run replication from source SQL Server to destination PostgreSQL.
 	restore_fks	Restore foreign keys in destination PostgreSQL that were previously
 			dropped by "replicate" command.
+	fullcopy	Copy tables from source SQL Server to destination PostgreSQL, truncating
+			existing data in the destination tables first.
 	`)
 }
 

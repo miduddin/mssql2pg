@@ -44,7 +44,7 @@ func newCmdReplicate(srcDB *sourceDB, dstDB *destinationDB, metaDB *metaDB, tabl
 }
 
 func (cmd *cmdReplicate) start(ctx context.Context) error {
-	if err := cmd.saveAndDropDstForeignKeys(); err != nil {
+	if err := saveAndDropDstForeignKeys(cmd.dstDB, cmd.metaDB); err != nil {
 		return fmt.Errorf("backup & drop foreign keys: %w", err)
 	}
 
@@ -119,8 +119,8 @@ func (cmd *cmdReplicate) start(ctx context.Context) error {
 	return nil
 }
 
-func (cmd *cmdReplicate) saveAndDropDstForeignKeys() error {
-	ok, err := cmd.metaDB.hasSavedForeignKeys()
+func saveAndDropDstForeignKeys(dstDB *destinationDB, metaDB *metaDB) error {
+	ok, err := metaDB.hasSavedForeignKeys()
 	if err != nil {
 		return fmt.Errorf("check saved foreign keys: %w", err)
 	}
@@ -128,7 +128,7 @@ func (cmd *cmdReplicate) saveAndDropDstForeignKeys() error {
 		return nil
 	}
 
-	fks, err := cmd.dstDB.getForeignKeys()
+	fks, err := dstDB.getForeignKeys()
 	if err != nil {
 		return fmt.Errorf("get foreign keys: %w", err)
 	}
@@ -136,11 +136,11 @@ func (cmd *cmdReplicate) saveAndDropDstForeignKeys() error {
 		return nil
 	}
 
-	if err := cmd.metaDB.saveForeignKeys(fks); err != nil {
+	if err := metaDB.saveForeignKeys(fks); err != nil {
 		return fmt.Errorf("save foreign keys: %w", err)
 	}
 
-	if err := cmd.dstDB.dropForeignKeys(fks); err != nil {
+	if err := dstDB.dropForeignKeys(fks); err != nil {
 		return fmt.Errorf("drop foreign keys: %w", err)
 	}
 
@@ -169,7 +169,7 @@ func (cmd *cmdReplicate) copyInitial(ctx context.Context, t tableInfo) error {
 		return nil
 	}
 
-	pks, err := cmd.dstDB.getPrimaryKeys(cmd.dstTable(t))
+	pks, err := cmd.dstDB.getPrimaryKeys(dstTable(t))
 	if err != nil {
 		return fmt.Errorf("get table primary keys: %w", err)
 	}
@@ -183,7 +183,7 @@ func (cmd *cmdReplicate) copyInitial(ctx context.Context, t tableInfo) error {
 
 	log.Info().Msgf("[%s] Starting initial table copy...", t)
 
-	if err := cmd.saveAndDropDstIndexes(t); err != nil {
+	if err := saveAndDropDstIndexes(cmd.dstDB, cmd.metaDB, t); err != nil {
 		return fmt.Errorf("save and drop dst indexes: %w", err)
 	}
 
@@ -205,7 +205,7 @@ func (cmd *cmdReplicate) copyInitial(ctx context.Context, t tableInfo) error {
 	}()
 
 	go func() {
-		lastID, err := cmd.dstDB.insertRows(newCtx, cmd.dstTable(t), lastCopiedID == nil, cmd.initialCopyBatchSize, rowChan)
+		lastID, err := cmd.dstDB.insertRows(newCtx, dstTable(t), lastCopiedID == nil, cmd.initialCopyBatchSize, rowChan)
 		if err != nil {
 			errChan <- err
 			cancel()
@@ -228,7 +228,7 @@ func (cmd *cmdReplicate) copyInitial(ctx context.Context, t tableInfo) error {
 	}
 
 	log.Info().Msgf("[%s] Rebuilding indexes...", t)
-	if err := cmd.restoreDstIndexes(ctx, t); err != nil {
+	if err := restoreDstIndexes(ctx, cmd.dstDB, cmd.metaDB, t); err != nil {
 		return fmt.Errorf("restore dst indexes: %w", err)
 	}
 
@@ -239,34 +239,34 @@ func (cmd *cmdReplicate) copyInitial(ctx context.Context, t tableInfo) error {
 	return nil
 }
 
-func (cmd *cmdReplicate) saveAndDropDstIndexes(t tableInfo) error {
-	ixs, err := cmd.dstDB.getIndexes(t)
+func saveAndDropDstIndexes(dstDB *destinationDB, metaDB *metaDB, t tableInfo) error {
+	ixs, err := dstDB.getIndexes(t)
 	if err != nil {
 		return fmt.Errorf("get indexes: %w", err)
 	}
 
-	if err := cmd.metaDB.saveDstIndexes(ixs); err != nil {
+	if err := metaDB.saveDstIndexes(ixs); err != nil {
 		return fmt.Errorf("save index: %w", err)
 	}
 
-	if err := cmd.dstDB.dropIndexes(ixs); err != nil {
+	if err := dstDB.dropIndexes(ixs); err != nil {
 		return fmt.Errorf("drop indexes: %w", err)
 	}
 
 	return nil
 }
 
-func (cmd *cmdReplicate) restoreDstIndexes(ctx context.Context, t tableInfo) error {
-	ixs, err := cmd.metaDB.getDstIndexes(t)
+func restoreDstIndexes(ctx context.Context, dstDB *destinationDB, metaDB *metaDB, t tableInfo) error {
+	ixs, err := metaDB.getDstIndexes(t)
 	if err != nil {
 		return fmt.Errorf("get dst indexes from meta DB: %w", err)
 	}
 
-	if err := cmd.dstDB.createIndexes(ctx, ixs); err != nil {
+	if err := dstDB.createIndexes(ctx, ixs); err != nil {
 		return fmt.Errorf("create indexes in dst DB: %w", err)
 	}
 
-	if err := cmd.metaDB.deleteDstIndexes(t); err != nil {
+	if err := metaDB.deleteDstIndexes(t); err != nil {
 		return fmt.Errorf("delete saved indexse in meta DB: %w", err)
 	}
 
@@ -378,7 +378,7 @@ func (cmd *cmdReplicate) getLastValidSyncVersion(t tableInfo) (int64, error) {
 	return lastVer, err
 }
 
-func (cmd *cmdReplicate) dstTable(srcTable tableInfo) tableInfo {
+func dstTable(srcTable tableInfo) tableInfo {
 	ret := tableInfo{
 		schema: strings.ToLower(srcTable.schema),
 		name:   strings.ToLower(srcTable.name),
