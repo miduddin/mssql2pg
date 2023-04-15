@@ -346,26 +346,44 @@ func (db *destinationDB) upsertRow(t tableInfo, primaryKeys, data rowdata) error
 	for k, v := range data {
 		cols[i] = `"` + k + `"`
 		insertParams[i] = fmt.Sprintf("$%d", i+1)
-		updateParams[i] = fmt.Sprintf("$%d", i+1+n)
+		updateParams[i] = fmt.Sprintf("$%d", i+1)
 		values[i] = v
 		i++
 	}
 	colStr := strings.Join(cols, ",")
-	values = append(values, values...)
 
-	pks := make([]string, len(primaryKeys))
+	pksConds := make([]string, len(primaryKeys))
+	pkVals := make([]any, len(primaryKeys))
 	i = 0
-	for k := range primaryKeys {
-		pks[i] = `"` + k + `"`
+	for k, v := range primaryKeys {
+		pksConds[i] = fmt.Sprintf(`"%s" = $%d`, k, len(values)+i+1)
+		pkVals[i] = v
 		i++
 	}
 
-	_, err := db.db.Exec(
+	res, err := db.db.Exec(
 		fmt.Sprintf(
-			`INSERT INTO "%s"."%s" (%s) VALUES (%s)
-			ON CONFLICT (%s) DO UPDATE SET (%s) = ROW(%s)`,
+			`UPDATE "%s"."%s" SET (%s) = ROW(%s) WHERE %s`,
+			t.schema, t.name, colStr, strings.Join(updateParams, ","), strings.Join(pksConds, " AND "),
+		),
+		append(values, pkVals...)...,
+	)
+	if err != nil {
+		return fmt.Errorf("sql update: %w", err)
+	}
+
+	count, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("get rows affected: %w", err)
+	}
+	if count > 0 {
+		return nil
+	}
+
+	_, err = db.db.Exec(
+		fmt.Sprintf(
+			`INSERT INTO "%s"."%s" (%s) VALUES (%s)`,
 			t.schema, t.name, colStr, strings.Join(insertParams, ","),
-			strings.Join(pks, ","), colStr, strings.Join(updateParams, ","),
 		),
 		values...,
 	)
