@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/rs/zerolog/log"
+	"github.com/schollz/progressbar/v3"
 )
 
 type cmdReplicate struct {
@@ -187,6 +188,19 @@ func (cmd *cmdReplicate) copyInitial(ctx context.Context, t tableInfo) error {
 		return fmt.Errorf("save and drop dst indexes: %w", err)
 	}
 
+	srcCount, _ := cmd.srcDB.getRowCount(t)
+	dstCount, _ := cmd.dstDB.getRowCount(dstTable(t))
+	bar := progressbar.NewOptions64(srcCount,
+		progressbar.OptionThrottle(500*time.Millisecond),
+		progressbar.OptionShowCount(),
+		progressbar.OptionShowIts(),
+		progressbar.OptionSetItsString("rows"),
+	)
+	bar.Add64(dstCount)
+	cb := func() {
+		bar.Add64(1)
+	}
+
 	var (
 		rowChan        = make(chan rowdata)
 		errChan        = make(chan error, 2)
@@ -205,7 +219,7 @@ func (cmd *cmdReplicate) copyInitial(ctx context.Context, t tableInfo) error {
 	}()
 
 	go func() {
-		lastID, err := cmd.dstDB.insertRows(newCtx, dstTable(t), lastCopiedID == nil, cmd.initialCopyBatchSize, rowChan)
+		lastID, err := cmd.dstDB.insertRows(newCtx, dstTable(t), lastCopiedID == nil, cmd.initialCopyBatchSize, rowChan, cb)
 		if err != nil {
 			errChan <- err
 			cancel()

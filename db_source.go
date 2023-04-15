@@ -7,12 +7,10 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/jmoiron/sqlx"
 	mssql "github.com/microsoft/go-mssqldb"
 	"github.com/rs/zerolog/log"
-	"github.com/schollz/progressbar/v3"
 )
 
 type sourceDB struct {
@@ -228,22 +226,11 @@ func (db *sourceDB) readRows(ctx context.Context, t tableInfo, output chan<- row
 		return fmt.Errorf("read column types: %w", err)
 	}
 
-	count, _ := db.getRowCount(t)
-
-	bar := progressbar.NewOptions64(count,
-		progressbar.OptionThrottle(500*time.Millisecond),
-		progressbar.OptionShowCount(),
-		progressbar.OptionShowIts(),
-		progressbar.OptionSetItsString("rows"),
-	)
-
 	for rows.Next() {
 		row, err := rows.SliceScan()
 		if err != nil {
 			return fmt.Errorf("row scan: %w", err)
 		}
-
-		bar.Add(1)
 
 		rd := rowdata{}
 		for i, ct := range cts {

@@ -381,7 +381,7 @@ func Test_destinationDB_insertRows(t *testing.T) {
 		}
 		close(ch)
 
-		_, err := dstDB.insertRows(context.Background(), table, true, 10, ch)
+		_, err := dstDB.insertRows(context.Background(), table, true, 10, ch, func() {})
 
 		assert.NoError(t, err)
 		assert.Equal(t,
@@ -418,7 +418,7 @@ func Test_destinationDB_insertRows(t *testing.T) {
 		wait := make(chan struct{})
 
 		go func() {
-			_, err := dstDB.insertRows(ctx, table, true, 10, ch)
+			_, err := dstDB.insertRows(ctx, table, true, 10, ch, func() {})
 
 			assert.EqualError(t, err, "insert data aborted, reason: context canceled")
 			close(wait)
@@ -435,7 +435,7 @@ func Test_destinationDB_insertRows(t *testing.T) {
 		ch := make(chan rowdata, 3)
 		close(ch)
 
-		_, err := dstDB.insertRows(context.Background(), table, true, 10, ch)
+		_, err := dstDB.insertRows(context.Background(), table, true, 10, ch, func() {})
 
 		assert.NoError(t, err)
 		assert.Equal(t,
@@ -455,7 +455,7 @@ func Test_destinationDB_insertRows(t *testing.T) {
 			close(ch)
 		}()
 
-		_, err := dstDB.insertRows(context.Background(), tableInfo{schema: "test", name: "more_table"}, true, 100, ch)
+		_, err := dstDB.insertRows(context.Background(), tableInfo{schema: "test", name: "more_table"}, true, 100, ch, func() {})
 
 		assert.NoError(t, err)
 
@@ -492,7 +492,7 @@ func Test_destinationDB_insertRows(t *testing.T) {
 		}
 		close(ch)
 
-		_, err := dstDB.insertRows(context.Background(), table, false, 10, ch)
+		_, err := dstDB.insertRows(context.Background(), table, false, 10, ch, func() {})
 
 		assert.NoError(t, err)
 		assert.Equal(t,
@@ -557,7 +557,7 @@ func Test_destinationDB_insertRows(t *testing.T) {
 		}
 		close(ch)
 
-		lastID, err := dstDB.insertRows(context.Background(), table, true, 10, ch)
+		lastID, err := dstDB.insertRows(context.Background(), table, true, 10, ch, func() {})
 
 		assert.NoError(t, err)
 		assert.Nil(t, lastID)
@@ -572,7 +572,7 @@ func Test_destinationDB_insertRows(t *testing.T) {
 		ch <- rowdata{"id": "1a2b3c4d-5a6b-7c8d-9910-111213141516", "val": "bar"}
 		close(ch)
 
-		lastID, err := dstDB.insertRows(context.Background(), tableInfo{schema: "test", name: "more_table"}, true, 10, ch)
+		lastID, err := dstDB.insertRows(context.Background(), tableInfo{schema: "test", name: "more_table"}, true, 10, ch, func() {})
 
 		assert.NoError(t, err)
 		assert.Equal(t, "1a2b3c4d-5a6b-7c8d-9910-111213141516", lastID)

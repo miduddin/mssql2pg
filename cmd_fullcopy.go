@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/rs/zerolog/log"
+	"github.com/schollz/progressbar/v3"
 )
 
 type cmdFullCopy struct {
@@ -79,6 +80,17 @@ func (cmd *cmdFullCopy) truncateAndCopy(ctx context.Context, t tableInfo) error 
 	)
 	wg.Add(2)
 
+	srcCount, _ := cmd.srcDB.getRowCount(t)
+	bar := progressbar.NewOptions64(srcCount,
+		progressbar.OptionThrottle(500*time.Millisecond),
+		progressbar.OptionShowCount(),
+		progressbar.OptionShowIts(),
+		progressbar.OptionSetItsString("rows"),
+	)
+	cb := func() {
+		bar.Add64(1)
+	}
+
 	go func() {
 		if err := cmd.srcDB.readRows(newCtx, t, rowChan, fmt.Sprintf("SELECT * FROM [%s].[%s]", t.schema, t.name)); err != nil {
 			errChan <- err
@@ -89,7 +101,7 @@ func (cmd *cmdFullCopy) truncateAndCopy(ctx context.Context, t tableInfo) error 
 	}()
 
 	go func() {
-		if _, err := cmd.dstDB.insertRows(newCtx, dstTable(t), true, cmd.batchSize, rowChan); err != nil {
+		if _, err := cmd.dstDB.insertRows(newCtx, dstTable(t), true, cmd.batchSize, rowChan, cb); err != nil {
 			errChan <- err
 			cancel()
 		}

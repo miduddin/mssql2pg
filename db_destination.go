@@ -213,7 +213,17 @@ func (db *destinationDB) createIndexes(ctx context.Context, ixs []dstIndex) erro
 	return nil
 }
 
-func (db *destinationDB) insertRows(ctx context.Context, t tableInfo, truncateFirst bool, batchSize uint, input <-chan rowdata) (lastInsertedID any, err error) {
+func (db *destinationDB) getRowCount(t tableInfo) (int64, error) {
+	var count int64
+	err := db.db.QueryRowx(fmt.Sprintf(
+		`SELECT count(*) FROM "%s"."%s"`,
+		t.schema, t.name,
+	)).Scan(&count)
+
+	return count, err
+}
+
+func (db *destinationDB) insertRows(ctx context.Context, t tableInfo, truncateFirst bool, batchSize uint, input <-chan rowdata, cb func()) (lastInsertedID any, err error) {
 	if truncateFirst {
 		_, err := db.db.Exec(fmt.Sprintf(`TRUNCATE TABLE "%s"."%s"`, t.schema, t.name))
 		if err != nil {
@@ -294,6 +304,9 @@ func (db *destinationDB) insertRows(ctx context.Context, t tableInfo, truncateFi
 			}
 			if len(pks) == 1 {
 				lastTempInsertedID = rd[pks[0]]
+			}
+			if cb != nil {
+				cb()
 			}
 
 		case <-ctx.Done():
