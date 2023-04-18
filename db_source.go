@@ -329,7 +329,7 @@ type tablechange struct {
 
 func (db *sourceDB) readTableChanges(ctx context.Context, t tableInfo, lastSyncVersion int64, output chan<- tablechange) (uint, error) {
 	rows, err := db.db.Queryx(fmt.Sprintf(
-		`SELECT * FROM CHANGETABLE(CHANGES [%s].[%s], %d) AS ct ORDER BY SYS_CHANGE_VERSION`,
+		`SELECT * FROM CHANGETABLE(CHANGES [%s].[%s], %d) AS ct`,
 		t.schema, t.name, lastSyncVersion,
 	))
 	if err != nil {
