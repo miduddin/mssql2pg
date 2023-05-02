@@ -26,9 +26,20 @@ type cmdReplicate struct {
 	changeTrackingCopyMinInterval time.Duration
 
 	allInitialCopyDone bool
+
+	metricsClient *metricsClient
 }
 
-func newCmdReplicate(srcDB *sourceDB, dstDB *destinationDB, metaDB *metaDB, tablesToPutLast, excludeTables []string, initialCopyBatchSize, changeTrackingRetentionDays uint) *cmdReplicate {
+func newCmdReplicate(
+	srcDB *sourceDB,
+	dstDB *destinationDB,
+	metaDB *metaDB,
+	tablesToPutLast []string,
+	excludeTables []string,
+	initialCopyBatchSize uint,
+	changeTrackingRetentionDays uint,
+	metricsClient *metricsClient,
+) *cmdReplicate {
 	return &cmdReplicate{
 		srcDB:  srcDB,
 		dstDB:  dstDB,
@@ -41,6 +52,8 @@ func newCmdReplicate(srcDB *sourceDB, dstDB *destinationDB, metaDB *metaDB, tabl
 		changeTrackingRetentionDays: changeTrackingRetentionDays,
 
 		changeTrackingCopyMinInterval: 1 * time.Minute,
+
+		metricsClient: metricsClient,
 	}
 }
 
@@ -349,7 +362,10 @@ func (cmd *cmdReplicate) copyCurrentChangeTracking(ctx context.Context, t tableI
 	}()
 
 	go func() {
-		n, err := cmd.dstDB.writeTableChanges(newCtx, t, rowChan)
+		n, err := cmd.dstDB.writeTableChanges(newCtx, dstTable(t), rowChan, func(tc *tablechange) {
+			cmd.metricsClient.changesReplicated.WithLabelValues(t.schema+"."+t.name, tc.operation).Inc()
+		})
+
 		if err != nil {
 			errChan <- err
 			cancel()

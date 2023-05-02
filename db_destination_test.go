@@ -633,7 +633,7 @@ func Test_destinationDB_writeTableChanges(t *testing.T) {
 		}
 		close(ch)
 
-		n, err := dstDB.writeTableChanges(context.Background(), table, ch)
+		n, err := dstDB.writeTableChanges(context.Background(), table, ch, nil)
 
 		assert.NoError(t, err)
 		assert.Equal(t, uint(4), n)
@@ -653,7 +653,7 @@ func Test_destinationDB_writeTableChanges(t *testing.T) {
 		wait := make(chan struct{})
 
 		go func() {
-			_, err := dstDB.writeTableChanges(ctx, table, ch)
+			_, err := dstDB.writeTableChanges(ctx, table, ch, nil)
 
 			assert.EqualError(t, err, "write change table aborted, reason: context canceled")
 			close(wait)

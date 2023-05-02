@@ -51,6 +51,7 @@ func main() {
 			cfg.ExcludeTables,
 			cfg.InitialCopyBatchSize,
 			cfg.ChangeTrackingRetentionDays,
+			newMetricsClient(8080),
 		)
 		log.Err(cmd.start(ctx)).Msg("Done.")
 

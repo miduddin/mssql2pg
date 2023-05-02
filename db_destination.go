@@ -315,7 +315,7 @@ func (db *destinationDB) insertRows(ctx context.Context, t tableInfo, truncateFi
 	}
 }
 
-func (db *destinationDB) writeTableChanges(ctx context.Context, t tableInfo, input <-chan tablechange) (uint, error) {
+func (db *destinationDB) writeTableChanges(ctx context.Context, t tableInfo, input <-chan tablechange, cb func(*tablechange)) (uint, error) {
 	var n uint = 0
 	for {
 		select {
@@ -343,6 +343,11 @@ func (db *destinationDB) writeTableChanges(ctx context.Context, t tableInfo, inp
 					return 0, fmt.Errorf("delete dst data: %w", err)
 				}
 			}
+
+			if cb != nil {
+				cb(&tc)
+			}
+
 		case <-ctx.Done():
 			return 0, fmt.Errorf("write change table aborted, reason: %w", ctx.Err())
 		}

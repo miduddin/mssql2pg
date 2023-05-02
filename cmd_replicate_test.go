@@ -13,7 +13,7 @@ import (
 
 func Test_cmdReplicate_start(t *testing.T) {
 	srcDB, dstDB, metaDB := openTestDB(t)
-	cmd := newCmdReplicate(srcDB, dstDB, metaDB, nil, nil, 10, 1)
+	cmd := newCmdReplicate(srcDB, dstDB, metaDB, nil, nil, 10, 1, runMetricsClient(t))
 	cmd.changeTrackingCopyMinInterval = 50 * time.Millisecond
 
 	initDB := func(t *testing.T) {
@@ -270,7 +270,7 @@ func Test_cmdReplicate_start(t *testing.T) {
 
 func Test_cmdReplicate_copyInitial(t *testing.T) {
 	srcDB, dstDB, metaDB := openTestDB(t)
-	cmd := newCmdReplicate(srcDB, dstDB, metaDB, nil, nil, 10, 1)
+	cmd := newCmdReplicate(srcDB, dstDB, metaDB, nil, nil, 10, 1, runMetricsClient(t))
 	table := tableInfo{schema: "test", name: "some_table"}
 
 	initDB := func(t *testing.T) {
@@ -521,7 +521,7 @@ func Test_cmdReplicate_copyInitial(t *testing.T) {
 
 func Test_cmdReplicate_copyChangeTracking(t *testing.T) {
 	srcDB, dstDB, metaDB := openTestDB(t)
-	cmd := newCmdReplicate(srcDB, dstDB, metaDB, nil, nil, 10, 1)
+	cmd := newCmdReplicate(srcDB, dstDB, metaDB, nil, nil, 10, 1, runMetricsClient(t))
 
 	initDB := func(t *testing.T) {
 		srcDB.db.MustExec(`
@@ -777,7 +777,7 @@ func Test_cmdReplicate_copyChangeTracking(t *testing.T) {
 func Test_cmdReplicate_getLastValidSyncVersion(t *testing.T) {
 	var (
 		srcDB, _, metaDB = openTestDB(t)
-		cmd              = newCmdReplicate(srcDB, nil, metaDB, nil, nil, 10, 1)
+		cmd              = newCmdReplicate(srcDB, nil, metaDB, nil, nil, 10, 1, runMetricsClient(t))
 		table            = tableInfo{schema: "test", name: "some_table"}
 	)
 
@@ -919,4 +919,11 @@ func openTestDB(t *testing.T) (*sourceDB, *destinationDB, *metaDB) {
 	})
 
 	return src, dst, meta
+}
+
+func runMetricsClient(t *testing.T) *metricsClient {
+	mc := newMetricsClient(8080)
+	t.Cleanup(func() { mc.shutdown() })
+
+	return mc
 }
