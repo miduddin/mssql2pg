@@ -424,26 +424,22 @@ func Test_sourceDB_readTableChanges(t *testing.T) {
 			entries = append(entries, e)
 		}
 
-		assert.Equal(t,
-			[]tablechange{
-				{
-					operation:   "I",
-					primaryKeys: rowdata{"id1": int64(1), "id2": int64(4)},
-					rowdata:     rowdata{"id1": int64(1), "id2": int64(4), "content": "baz"},
-				},
-				{
-					operation:   "U",
-					primaryKeys: rowdata{"id1": int64(1), "id2": int64(2)},
-					rowdata:     rowdata{"id1": int64(1), "id2": int64(2), "content": "qux"},
-				},
-				{
-					operation:   "D",
-					primaryKeys: rowdata{"id1": int64(1), "id2": int64(3)},
-					rowdata:     nil,
-				},
-			},
-			entries,
-		)
+		assert.Len(t, entries, 3)
+		assert.Contains(t, entries, tablechange{
+			operation:   "I",
+			primaryKeys: rowdata{"id1": int64(1), "id2": int64(4)},
+			rowdata:     rowdata{"id1": int64(1), "id2": int64(4), "content": "baz"},
+		})
+		assert.Contains(t, entries, tablechange{
+			operation:   "U",
+			primaryKeys: rowdata{"id1": int64(1), "id2": int64(2)},
+			rowdata:     rowdata{"id1": int64(1), "id2": int64(2), "content": "qux"},
+		})
+		assert.Contains(t, entries, tablechange{
+			operation:   "D",
+			primaryKeys: rowdata{"id1": int64(1), "id2": int64(3)},
+			rowdata:     nil,
+		})
 	})
 
 	t.Run("returns error when context is done", func(t *testing.T) {

@@ -229,6 +229,43 @@ func Test_cmdReplicate_start(t *testing.T) {
 		cancel()
 		<-wait
 	})
+
+	t.Run("able to copy changes from when the program is not running", func(t *testing.T) {
+		initDB(t)
+		row, _ := srcDB.db.QueryRowx(`SELECT CHANGE_TRACKING_CURRENT_VERSION()`).SliceScan()
+		metaDB.db.MustExec(
+			`INSERT INTO replication_progress (schema_name, table_name, initial_copy_done, change_tracking_last_version)
+			VALUES ('s1', 't1', 1, ?);`,
+			row...,
+		)
+		srcDB.db.MustExec(`
+			INSERT INTO s1.t1 VALUES (2), (3);
+			UPDATE s1.t1 SET id = 4 WHERE id = 2;
+			DELETE FROM s1.t1 WHERE id = 1;
+		`)
+		ctx, cancel := context.WithCancel(context.Background())
+		wait := make(chan struct{})
+
+		go func() {
+			err := cmd.start(ctx)
+
+			assert.NoError(t, err)
+			close(wait)
+		}()
+
+		time.Sleep(400 * time.Millisecond)
+
+		assert.Equal(t,
+			[]rowdata{
+				{"id": int64(3)},
+				{"id": int64(4)},
+			},
+			getAllData(t, dstDB.db, tableInfo{schema: "s1", name: "t1"}, "id"),
+		)
+
+		cancel()
+		<-wait
+	})
 }
 
 func Test_cmdReplicate_copyInitial(t *testing.T) {
@@ -257,6 +294,11 @@ func Test_cmdReplicate_copyInitial(t *testing.T) {
 			INSERT INTO test.some_table (id1, id2, val1, val2, val3, val4, val5, val6, val7) VALUES
 				('1a2b3c4d-5a6b-7c8d-9910-111213141516', 1, 'foo', 2, '2020-01-02', '2020-01-02T15:04:05Z', '2020-01-02T15:04:05Z', 'A', 'lorem'),
 				('1a2b3c4d-5a6b-7c8d-9910-111213141517', 3, 'bar', 4, '2020-01-03', '2020-01-03T15:04:05Z', '2020-01-03T15:04:05Z', 'B', 'ipsum'+char(0));
+
+			ALTER DATABASE CURRENT SET CHANGE_TRACKING = ON
+				(CHANGE_RETENTION = 1 DAYS, AUTO_CLEANUP = ON);
+
+			ALTER TABLE test.some_table ENABLE CHANGE_TRACKING;
 		`)
 
 		dstDB.db.MustExec(`
@@ -286,6 +328,8 @@ func Test_cmdReplicate_copyInitial(t *testing.T) {
 			srcDB.db.MustExec(`
 				DROP TABLE test.some_table;
 				DROP SCHEMA test;
+
+				ALTER DATABASE CURRENT SET CHANGE_TRACKING = OFF;
 			`)
 
 			dstDB.db.MustExec(`
@@ -412,18 +456,13 @@ func Test_cmdReplicate_copyInitial(t *testing.T) {
 
 		assert.NoError(t, err)
 		assert.NoError(t, err)
-		assert.Equal(t,
-			[]rowdata{
-				{
-					"schema_name":                  "test",
-					"table_name":                   "some_table",
-					"change_tracking_last_version": int64(0),
-					"initial_copy_done":            int64(1),
-					"initial_copy_last_id":         nil,
-				},
-			},
-			getAllData(t, metaDB.db, tableInfo{name: "replication_progress"}, "table_name"),
-		)
+
+		row, _ := metaDB.db.QueryRowx(`
+			SELECT initial_copy_done FROM replication_progress
+			WHERE schema_name = 'test' AND table_name = 'some_table';
+		`).SliceScan()
+
+		assert.Equal(t, []any{int64(1)}, row)
 	})
 
 	t.Run("skips copy if table is already marked as processed", func(t *testing.T) {

@@ -80,15 +80,6 @@ func (cmd *cmdReplicate) start(ctx context.Context) error {
 			return fmt.Errorf("enable change tracking: %w", err)
 		}
 
-		ver, err := cmd.srcDB.getChangeTrackingCurrentVersion(t)
-		if err != nil {
-			return fmt.Errorf("get change tracking current version: %w", err)
-		}
-
-		if err := cmd.metaDB.saveChangeTrackingVersion(t, ver); err != nil {
-			return fmt.Errorf("save change tracking current version: %w", err)
-		}
-
 		// Auto retry initial table copy error
 		for {
 			err := cmd.copyInitial(ctx, t)
@@ -168,6 +159,15 @@ func (cmd *cmdReplicate) copyInitial(ctx context.Context, t tableInfo) error {
 	if done {
 		log.Info().Msgf("[%s] Initial table copy already done.", t)
 		return nil
+	}
+
+	ver, err := cmd.srcDB.getChangeTrackingCurrentVersion(t)
+	if err != nil {
+		return fmt.Errorf("get change tracking current version: %w", err)
+	}
+
+	if err := cmd.metaDB.saveChangeTrackingVersion(t, ver); err != nil {
+		return fmt.Errorf("save change tracking current version: %w", err)
 	}
 
 	pks, err := cmd.dstDB.getPrimaryKeys(dstTable(t))
