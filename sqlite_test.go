@@ -6,7 +6,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func Test_metaDB_hasSavedForeignKeys(t *testing.T) {
+func Test_sqlite_hasSavedForeignKeys(t *testing.T) {
 	_, _, metaDB := openTestDB(t)
 
 	initDB := func(t *testing.T) {
@@ -35,7 +35,7 @@ func Test_metaDB_hasSavedForeignKeys(t *testing.T) {
 	})
 }
 
-func Test_metaDB_saveForeignKeys(t *testing.T) {
+func Test_sqlite_insertSavedForeignKeys(t *testing.T) {
 	_, _, metaDB := openTestDB(t)
 
 	initDB := func(t *testing.T) {
@@ -47,7 +47,7 @@ func Test_metaDB_saveForeignKeys(t *testing.T) {
 	t.Run("persists given foreign keys info to meta DB", func(t *testing.T) {
 		initDB(t)
 
-		err := metaDB.saveForeignKeys([]dstForeignKey{
+		err := metaDB.insertSavedForeignKeys([]foreignKey{
 			{t: tableInfo{schema: "schema1", name: "table1"}, name: "fk1", definition: "def1"},
 			{t: tableInfo{schema: "schema1", name: "table1"}, name: "fk2", definition: "def2"},
 			{t: tableInfo{schema: "schema2", name: "table2"}, name: "fk3", definition: "def3"},
@@ -55,7 +55,7 @@ func Test_metaDB_saveForeignKeys(t *testing.T) {
 
 		assert.NoError(t, err)
 		assert.Equal(t,
-			[]rowdata{
+			[]rowData{
 				{"schema_name": "schema1", "table_name": "table1", "fk_name": "fk1", "fk_definition": "def1"},
 				{"schema_name": "schema1", "table_name": "table1", "fk_name": "fk2", "fk_definition": "def2"},
 				{"schema_name": "schema2", "table_name": "table2", "fk_name": "fk3", "fk_definition": "def3"},
@@ -65,7 +65,7 @@ func Test_metaDB_saveForeignKeys(t *testing.T) {
 	})
 }
 
-func Test_metaDB_saveDstIndexes(t *testing.T) {
+func Test_sqlite_insertSavedIndexes(t *testing.T) {
 	_, _, metaDB := openTestDB(t)
 
 	initDB := func(t *testing.T) {
@@ -77,15 +77,15 @@ func Test_metaDB_saveDstIndexes(t *testing.T) {
 	t.Run("persists given indexes info to meta DB", func(t *testing.T) {
 		initDB(t)
 
-		err := metaDB.saveDstIndexes([]dstIndex{
-			{t: tableInfo{schema: "schema1", name: "table1"}, name: "ix1", def: "def1"},
-			{t: tableInfo{schema: "schema1", name: "table1"}, name: "ix2", def: "def2"},
-			{t: tableInfo{schema: "schema2", name: "table2"}, name: "ix3", def: "def3"},
+		err := metaDB.insertSavedIndexes([]index{
+			{table: tableInfo{schema: "schema1", name: "table1"}, name: "ix1", def: "def1"},
+			{table: tableInfo{schema: "schema1", name: "table1"}, name: "ix2", def: "def2"},
+			{table: tableInfo{schema: "schema2", name: "table2"}, name: "ix3", def: "def3"},
 		})
 
 		assert.NoError(t, err)
 		assert.Equal(t,
-			[]rowdata{
+			[]rowData{
 				{"schema_name": "schema1", "table_name": "table1", "index_name": "ix1", "index_def": "def1"},
 				{"schema_name": "schema1", "table_name": "table1", "index_name": "ix2", "index_def": "def2"},
 				{"schema_name": "schema2", "table_name": "table2", "index_name": "ix3", "index_def": "def3"},
@@ -95,7 +95,7 @@ func Test_metaDB_saveDstIndexes(t *testing.T) {
 	})
 }
 
-func Test_metaDB_getDstIndexes(t *testing.T) {
+func Test_sqlite_getSavedIndexes(t *testing.T) {
 	_, _, metaDB := openTestDB(t)
 	table := tableInfo{schema: "schema1", name: "table1"}
 
@@ -115,20 +115,20 @@ func Test_metaDB_getDstIndexes(t *testing.T) {
 	t.Run("returns indexes saved in metaDB", func(t *testing.T) {
 		initDB(t)
 
-		ixs, err := metaDB.getDstIndexes(table)
+		ixs, err := metaDB.getSavedIndexes(table)
 
 		assert.NoError(t, err)
 		assert.Equal(t,
-			[]dstIndex{
-				{t: table, name: "ix1", def: "def1"},
-				{t: table, name: "ix2", def: "def22"},
+			[]index{
+				{table: table, name: "ix1", def: "def1"},
+				{table: table, name: "ix2", def: "def22"},
 			},
 			ixs,
 		)
 	})
 }
 
-func Test_metaDB_saveChangeTrackingVersion(t *testing.T) {
+func Test_sqlite_upsertChangeTrackingVersion(t *testing.T) {
 	_, _, metaDB := openTestDB(t)
 	table := tableInfo{schema: "test", name: "some_table"}
 
@@ -146,11 +146,11 @@ func Test_metaDB_saveChangeTrackingVersion(t *testing.T) {
 	t.Run("inserts new row for new table", func(t *testing.T) {
 		initDB(t)
 
-		err := metaDB.saveChangeTrackingVersion(tableInfo{schema: "foo", name: "bar"}, 13)
+		err := metaDB.upsertChangeTrackingVersion(tableInfo{schema: "foo", name: "bar"}, 13)
 
 		assert.NoError(t, err)
 		assert.Equal(t,
-			[]rowdata{
+			[]rowData{
 				{
 					"schema_name":                  "foo",
 					"table_name":                   "bar",
@@ -173,11 +173,11 @@ func Test_metaDB_saveChangeTrackingVersion(t *testing.T) {
 	t.Run("updates data for existing table", func(t *testing.T) {
 		initDB(t)
 
-		err := metaDB.saveChangeTrackingVersion(table, 13)
+		err := metaDB.upsertChangeTrackingVersion(table, 13)
 
 		assert.NoError(t, err)
 		assert.Equal(t,
-			[]rowdata{
+			[]rowData{
 				{
 					"schema_name":                  "test",
 					"table_name":                   "some_table",
@@ -191,7 +191,7 @@ func Test_metaDB_saveChangeTrackingVersion(t *testing.T) {
 	})
 }
 
-func Test_metaDB_getInitialCopyStatus(t *testing.T) {
+func Test_sqlite_getInitialCopyStatus(t *testing.T) {
 	_, _, metaDB := openTestDB(t)
 	table := tableInfo{schema: "test", name: "some_table"}
 
@@ -223,7 +223,7 @@ func Test_metaDB_getInitialCopyStatus(t *testing.T) {
 		assert.Equal(t, "", lastID)
 
 		assert.Equal(t,
-			[]rowdata{
+			[]rowData{
 				{"schema_name": "test", "table_name": "more_table", "initial_copy_done": int64(0), "initial_copy_last_id": nil, "change_tracking_last_version": int64(0)},
 				{"schema_name": "test", "table_name": "some_table", "initial_copy_done": int64(1), "initial_copy_last_id": "42", "change_tracking_last_version": int64(0)},
 			},
@@ -241,7 +241,7 @@ func Test_metaDB_getInitialCopyStatus(t *testing.T) {
 		assert.Equal(t, "", lastID)
 
 		assert.Equal(t,
-			[]rowdata{
+			[]rowData{
 				{"schema_name": "test", "table_name": "more_table", "initial_copy_done": int64(0), "initial_copy_last_id": nil, "change_tracking_last_version": int64(0)},
 				{"schema_name": "test", "table_name": "other_table", "initial_copy_done": int64(0), "initial_copy_last_id": nil, "change_tracking_last_version": int64(0)},
 				{"schema_name": "test", "table_name": "some_table", "initial_copy_done": int64(1), "initial_copy_last_id": "42", "change_tracking_last_version": int64(0)},
@@ -251,7 +251,7 @@ func Test_metaDB_getInitialCopyStatus(t *testing.T) {
 	})
 }
 
-func Test_metaDB_markInitialCopyDone(t *testing.T) {
+func Test_sqlite_markInitialCopyDone(t *testing.T) {
 	_, _, metaDB := openTestDB(t)
 	table := tableInfo{schema: "test", name: "some_table"}
 
@@ -270,7 +270,7 @@ func Test_metaDB_markInitialCopyDone(t *testing.T) {
 
 		assert.NoError(t, err)
 		assert.Equal(t,
-			[]rowdata{
+			[]rowData{
 				{"schema_name": "test", "table_name": "some_table", "initial_copy_done": int64(1), "initial_copy_last_id": nil, "change_tracking_last_version": int64(0)},
 			},
 			getAllData(t, metaDB.db, tableInfo{name: "replication_progress"}, "table_name"),
@@ -284,7 +284,7 @@ func Test_metaDB_markInitialCopyDone(t *testing.T) {
 
 		assert.NoError(t, err)
 		assert.Equal(t,
-			[]rowdata{
+			[]rowData{
 				{"schema_name": "test", "table_name": "some_table", "initial_copy_done": int64(0), "initial_copy_last_id": nil, "change_tracking_last_version": int64(0)},
 			},
 			getAllData(t, metaDB.db, tableInfo{name: "replication_progress"}, "table_name"),

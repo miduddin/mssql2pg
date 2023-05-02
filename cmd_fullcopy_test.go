@@ -105,7 +105,7 @@ func Test_cmdFullCopy_start(t *testing.T) {
 		assert.NoError(t, err)
 
 		assert.Equal(t,
-			[]rowdata{
+			[]rowData{
 				{"id": int64(1)},
 			},
 			getAllData(t, dstDB.db, tableInfo{schema: "public", name: "t1"}, "id"),
@@ -114,7 +114,7 @@ func Test_cmdFullCopy_start(t *testing.T) {
 		assert.Empty(t, getAllData(t, dstDB.db, tableInfo{schema: "s1", name: "t2"}, "id"))
 
 		assert.Equal(t,
-			[]rowdata{
+			[]rowData{
 				{
 					"id1":  []byte("1a2b3c4d-5a6b-7c8d-9910-111213141516"),
 					"id2":  int64(1),

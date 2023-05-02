@@ -9,15 +9,15 @@ import (
 	"strings"
 
 	"github.com/jmoiron/sqlx"
-	mssql "github.com/microsoft/go-mssqldb"
+	gomssql "github.com/microsoft/go-mssqldb"
 	"github.com/rs/zerolog/log"
 )
 
-type sourceDB struct {
+type mssql struct {
 	db *sqlx.DB
 }
 
-func newSourceDB(user, pass, host, dbname string) (*sourceDB, error) {
+func newMssql(user, pass, host, dbname string) (*mssql, error) {
 	db, err := sqlx.Connect("sqlserver", fmt.Sprintf(
 		"sqlserver://%s:%s@%s?database=%s&encrypt=disable",
 		user, pass, host, dbname,
@@ -26,10 +26,10 @@ func newSourceDB(user, pass, host, dbname string) (*sourceDB, error) {
 		return nil, fmt.Errorf("open src db: %w", err)
 	}
 
-	return &sourceDB{db}, nil
+	return &mssql{db}, nil
 }
 
-func (db *sourceDB) getTables(tablesToPutLast, excludes []string) ([]tableInfo, error) {
+func (db *mssql) getTables(tablesToPutLast, excludes []string) ([]tableInfo, error) {
 	// From https://stackoverflow.com/a/7892349
 	rows, err := db.db.Queryx(
 		`SELECT
@@ -114,13 +114,13 @@ func (db *sourceDB) getTables(tablesToPutLast, excludes []string) ([]tableInfo, 
 	return append(firstTables, lastTables...), nil
 }
 
-func (db *sourceDB) getChangeTrackingCurrentVersion(t tableInfo) (int64, error) {
+func (db *mssql) getChangeTrackingCurrentVersion(t tableInfo) (int64, error) {
 	var ver int64
 	err := db.db.QueryRowx(`SELECT CHANGE_TRACKING_CURRENT_VERSION()`).Scan(&ver)
 	return ver, err
 }
 
-func (db *sourceDB) enableChangeTracking(t tableInfo, retentionDays uint) error {
+func (db *mssql) enableChangeTracking(t tableInfo, retentionDays uint) error {
 	var count uint
 	err := db.db.QueryRowx(
 		`SELECT count(*)
@@ -178,7 +178,7 @@ func (db *sourceDB) enableChangeTracking(t tableInfo, retentionDays uint) error 
 	return nil
 }
 
-func (db *sourceDB) readRowsWithPK(ctx context.Context, t tableInfo, afterPK any, output chan<- rowdata) error {
+func (db *mssql) readRowsWithPK(ctx context.Context, t tableInfo, afterPK any, output chan<- rowData) error {
 	pks, err := db.getPrimaryKeys(t)
 	if err != nil {
 		return fmt.Errorf("get primary keys: %w", err)
@@ -214,7 +214,7 @@ func (db *sourceDB) readRowsWithPK(ctx context.Context, t tableInfo, afterPK any
 	return db.readRows(ctx, t, output, query, args...)
 }
 
-func (db *sourceDB) readRows(ctx context.Context, t tableInfo, output chan<- rowdata, query string, args ...any) error {
+func (db *mssql) readRows(ctx context.Context, t tableInfo, output chan<- rowData, query string, args ...any) error {
 	rows, err := db.db.QueryxContext(ctx, query, args...)
 	if err != nil {
 		return fmt.Errorf("sql query: %w", err)
@@ -232,7 +232,7 @@ func (db *sourceDB) readRows(ctx context.Context, t tableInfo, output chan<- row
 			return fmt.Errorf("row scan: %w", err)
 		}
 
-		rd := rowdata{}
+		rd := rowData{}
 		for i, ct := range cts {
 			rd[ct.Name()] = db.fixValueByType(row[i], ct)
 		}
@@ -252,7 +252,7 @@ func (db *sourceDB) readRows(ctx context.Context, t tableInfo, output chan<- row
 	return nil
 }
 
-func (db *sourceDB) getPrimaryKeys(t tableInfo) ([]string, error) {
+func (db *mssql) getPrimaryKeys(t tableInfo) ([]string, error) {
 	rows, err := db.db.Queryx(
 		`SELECT column_name
 		FROM information_schema.key_column_usage
@@ -281,7 +281,7 @@ func (db *sourceDB) getPrimaryKeys(t tableInfo) ([]string, error) {
 	return ret, nil
 }
 
-func (db *sourceDB) fixValueByType(v any, ct *sql.ColumnType) any {
+func (db *mssql) fixValueByType(v any, ct *sql.ColumnType) any {
 	if v == nil {
 		return nil
 	}
@@ -293,7 +293,7 @@ func (db *sourceDB) fixValueByType(v any, ct *sql.ColumnType) any {
 		b[4], b[5] = b[5], b[4]
 		b[6], b[7] = b[7], b[6]
 
-		return strings.ToLower(mssql.UniqueIdentifier(b).String())
+		return strings.ToLower(gomssql.UniqueIdentifier(b).String())
 	case "DECIMAL":
 		v, _ := strconv.ParseFloat(string(v.([]byte)), 64)
 		return v
@@ -308,7 +308,7 @@ func (db *sourceDB) fixValueByType(v any, ct *sql.ColumnType) any {
 	}
 }
 
-func (db *sourceDB) getChangeTrackingMinValidVersion(t tableInfo) (int64, error) {
+func (db *mssql) getChangeTrackingMinValidVersion(t tableInfo) (int64, error) {
 	var ver int64
 	err := db.db.QueryRowx(fmt.Sprintf(
 		"SELECT CHANGE_TRACKING_MIN_VALID_VERSION(OBJECT_ID('%s.%s'))",
@@ -321,13 +321,7 @@ func (db *sourceDB) getChangeTrackingMinValidVersion(t tableInfo) (int64, error)
 	return ver, nil
 }
 
-type tablechange struct {
-	operation   string
-	primaryKeys rowdata
-	rowdata     rowdata
-}
-
-func (db *sourceDB) readTableChanges(ctx context.Context, t tableInfo, lastSyncVersion int64, output chan<- tablechange) (uint, error) {
+func (db *mssql) readRowChanges(ctx context.Context, t tableInfo, lastSyncVersion int64, output chan<- rowChange) (uint, error) {
 	rows, err := db.db.Queryx(fmt.Sprintf(
 		`SELECT * FROM CHANGETABLE(CHANGES [%s].[%s], %d) AS ct`,
 		t.schema, t.name, lastSyncVersion,
@@ -350,8 +344,8 @@ func (db *sourceDB) readTableChanges(ctx context.Context, t tableInfo, lastSyncV
 			return 0, fmt.Errorf("scan row: %w", err)
 		}
 
-		tc := tablechange{
-			primaryKeys: rowdata{},
+		tc := rowChange{
+			primaryKeys: rowData{},
 		}
 
 		for i, ct := range cts {
@@ -384,7 +378,7 @@ func (db *sourceDB) readTableChanges(ctx context.Context, t tableInfo, lastSyncV
 	return n, nil
 }
 
-func (db *sourceDB) getRow(t tableInfo, primaryKeys rowdata) (rowdata, error) {
+func (db *mssql) getRow(t tableInfo, primaryKeys rowData) (rowData, error) {
 	filters := make([]string, len(primaryKeys))
 	values := make([]any, len(primaryKeys))
 	i := 0
@@ -415,7 +409,7 @@ func (db *sourceDB) getRow(t tableInfo, primaryKeys rowdata) (rowdata, error) {
 		return nil, fmt.Errorf("scan row: %w", err)
 	}
 
-	rd := rowdata{}
+	rd := rowData{}
 	for i, ct := range cts {
 		rd[ct.Name()] = db.fixValueByType(vals[i], ct)
 	}
@@ -423,7 +417,7 @@ func (db *sourceDB) getRow(t tableInfo, primaryKeys rowdata) (rowdata, error) {
 	return rd, nil
 }
 
-func (db *sourceDB) getRowCount(t tableInfo) (int64, error) {
+func (db *mssql) getRowCount(t tableInfo) (int64, error) {
 	var ret int64
 	err := db.db.QueryRowx(fmt.Sprintf(
 		`SELECT SUM(st.row_count)

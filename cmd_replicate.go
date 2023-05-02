@@ -13,9 +13,9 @@ import (
 )
 
 type cmdReplicate struct {
-	srcDB  *sourceDB
-	dstDB  *destinationDB
-	metaDB *metaDB
+	srcDB  *mssql
+	dstDB  *postgres
+	metaDB *sqlite
 
 	tablesToPutLast []string
 	excludeTables   []string
@@ -31,9 +31,9 @@ type cmdReplicate struct {
 }
 
 func newCmdReplicate(
-	srcDB *sourceDB,
-	dstDB *destinationDB,
-	metaDB *metaDB,
+	srcDB *mssql,
+	dstDB *postgres,
+	metaDB *sqlite,
 	tablesToPutLast []string,
 	excludeTables []string,
 	initialCopyBatchSize uint,
@@ -58,7 +58,7 @@ func newCmdReplicate(
 }
 
 func (cmd *cmdReplicate) start(ctx context.Context) error {
-	if err := saveAndDropDstForeignKeys(cmd.dstDB, cmd.metaDB); err != nil {
+	if err := stashDstForeignKeys(cmd.dstDB, cmd.metaDB); err != nil {
 		return fmt.Errorf("backup & drop foreign keys: %w", err)
 	}
 
@@ -96,22 +96,21 @@ func (cmd *cmdReplicate) start(ctx context.Context) error {
 		// Auto retry initial table copy error
 		for {
 			err := cmd.copyInitial(ctx, t)
+			if err == nil {
+				break
+			}
+
 			if errors.Is(err, context.Canceled) {
 				return fmt.Errorf("initial table copy: %w", err)
 			}
-			if err != nil {
-				log.Err(err).Msgf("Initial table copy error (will retry)")
 
-				select {
-				case <-time.After(5 * time.Minute):
-				case <-ctx.Done():
-					return fmt.Errorf("initial table copy: %w", ctx.Err())
-				}
+			log.Err(err).Msgf("Initial table copy error (will retry)")
 
-				continue
+			select {
+			case <-time.After(5 * time.Minute):
+			case <-ctx.Done():
+				return fmt.Errorf("initial table copy: %w", ctx.Err())
 			}
-
-			break
 		}
 
 		log.Info().Msgf("[%s] Initial table copy complete, tracking changes in background...", t)
@@ -124,7 +123,7 @@ func (cmd *cmdReplicate) start(ctx context.Context) error {
 	return nil
 }
 
-func saveAndDropDstForeignKeys(dstDB *destinationDB, metaDB *metaDB) error {
+func stashDstForeignKeys(dstDB *postgres, metaDB *sqlite) error {
 	ok, err := metaDB.hasSavedForeignKeys()
 	if err != nil {
 		return fmt.Errorf("check saved foreign keys: %w", err)
@@ -141,7 +140,7 @@ func saveAndDropDstForeignKeys(dstDB *destinationDB, metaDB *metaDB) error {
 		return nil
 	}
 
-	if err := metaDB.saveForeignKeys(fks); err != nil {
+	if err := metaDB.insertSavedForeignKeys(fks); err != nil {
 		return fmt.Errorf("save foreign keys: %w", err)
 	}
 
@@ -152,7 +151,7 @@ func saveAndDropDstForeignKeys(dstDB *destinationDB, metaDB *metaDB) error {
 	return nil
 }
 
-type rowdata map[string]any
+type rowData map[string]any
 
 type tableInfo struct {
 	schema string
@@ -179,7 +178,7 @@ func (cmd *cmdReplicate) copyInitial(ctx context.Context, t tableInfo) error {
 		return fmt.Errorf("get change tracking current version: %w", err)
 	}
 
-	if err := cmd.metaDB.saveChangeTrackingVersion(t, ver); err != nil {
+	if err := cmd.metaDB.upsertChangeTrackingVersion(t, ver); err != nil {
 		return fmt.Errorf("save change tracking current version: %w", err)
 	}
 
@@ -197,7 +196,7 @@ func (cmd *cmdReplicate) copyInitial(ctx context.Context, t tableInfo) error {
 
 	log.Info().Msgf("[%s] Starting initial table copy...", t)
 
-	if err := saveAndDropDstIndexes(cmd.dstDB, cmd.metaDB, t); err != nil {
+	if err := stashDstIndexes(cmd.dstDB, cmd.metaDB, t); err != nil {
 		return fmt.Errorf("save and drop dst indexes: %w", err)
 	}
 
@@ -215,7 +214,7 @@ func (cmd *cmdReplicate) copyInitial(ctx context.Context, t tableInfo) error {
 	}
 
 	var (
-		rowChan        = make(chan rowdata)
+		rowChan        = make(chan rowData)
 		errChan        = make(chan error, 2)
 		newCtx, cancel = context.WithCancel(ctx)
 		wg             = &sync.WaitGroup{}
@@ -266,13 +265,13 @@ func (cmd *cmdReplicate) copyInitial(ctx context.Context, t tableInfo) error {
 	return nil
 }
 
-func saveAndDropDstIndexes(dstDB *destinationDB, metaDB *metaDB, t tableInfo) error {
+func stashDstIndexes(dstDB *postgres, metaDB *sqlite, t tableInfo) error {
 	ixs, err := dstDB.getIndexes(t)
 	if err != nil {
 		return fmt.Errorf("get indexes: %w", err)
 	}
 
-	if err := metaDB.saveDstIndexes(ixs); err != nil {
+	if err := metaDB.insertSavedIndexes(ixs); err != nil {
 		return fmt.Errorf("save index: %w", err)
 	}
 
@@ -283,8 +282,8 @@ func saveAndDropDstIndexes(dstDB *destinationDB, metaDB *metaDB, t tableInfo) er
 	return nil
 }
 
-func restoreDstIndexes(ctx context.Context, dstDB *destinationDB, metaDB *metaDB, t tableInfo) error {
-	ixs, err := metaDB.getDstIndexes(t)
+func restoreDstIndexes(ctx context.Context, dstDB *postgres, metaDB *sqlite, t tableInfo) error {
+	ixs, err := metaDB.getSavedIndexes(t)
 	if err != nil {
 		return fmt.Errorf("get dst indexes from meta DB: %w", err)
 	}
@@ -293,7 +292,7 @@ func restoreDstIndexes(ctx context.Context, dstDB *destinationDB, metaDB *metaDB
 		return fmt.Errorf("create indexes in dst DB: %w", err)
 	}
 
-	if err := metaDB.deleteDstIndexes(t); err != nil {
+	if err := metaDB.truncateSavedIndexes(t); err != nil {
 		return fmt.Errorf("delete saved indexse in meta DB: %w", err)
 	}
 
@@ -331,6 +330,12 @@ func (cmd *cmdReplicate) copyChangeTracking(ctx context.Context, queue chan tabl
 	}
 }
 
+type rowChange struct {
+	operation   string
+	primaryKeys rowData
+	rowdata     rowData
+}
+
 func (cmd *cmdReplicate) copyCurrentChangeTracking(ctx context.Context, t tableInfo) (nRead, nWrite uint, err error) {
 	ver, err := cmd.getLastValidSyncVersion(t)
 	if err != nil {
@@ -343,7 +348,7 @@ func (cmd *cmdReplicate) copyCurrentChangeTracking(ctx context.Context, t tableI
 	}
 
 	var (
-		rowChan        = make(chan tablechange)
+		rowChan        = make(chan rowChange)
 		errChan        = make(chan error, 2)
 		newCtx, cancel = context.WithCancel(ctx)
 		wg             = &sync.WaitGroup{}
@@ -351,7 +356,7 @@ func (cmd *cmdReplicate) copyCurrentChangeTracking(ctx context.Context, t tableI
 	wg.Add(2)
 
 	go func() {
-		n, err := cmd.srcDB.readTableChanges(newCtx, t, ver, rowChan)
+		n, err := cmd.srcDB.readRowChanges(newCtx, t, ver, rowChan)
 		if err != nil {
 			errChan <- err
 			cancel()
@@ -362,7 +367,7 @@ func (cmd *cmdReplicate) copyCurrentChangeTracking(ctx context.Context, t tableI
 	}()
 
 	go func() {
-		n, err := cmd.dstDB.writeTableChanges(newCtx, dstTable(t), rowChan, func(tc *tablechange) {
+		n, err := cmd.dstDB.writeRowChanges(newCtx, dstTable(t), rowChan, func(tc *rowChange) {
 			cmd.metricsClient.changesReplicated.WithLabelValues(t.schema+"."+t.name, tc.operation).Inc()
 		})
 
@@ -381,7 +386,7 @@ func (cmd *cmdReplicate) copyCurrentChangeTracking(ctx context.Context, t tableI
 		return 0, 0, fmt.Errorf("read/write changetable: %w", err)
 	}
 
-	if err := cmd.metaDB.saveChangeTrackingVersion(t, newVer); err != nil {
+	if err := cmd.metaDB.upsertChangeTrackingVersion(t, newVer); err != nil {
 		return 0, 0, fmt.Errorf("save change tracking version: %w", err)
 	}
 
@@ -391,7 +396,7 @@ func (cmd *cmdReplicate) copyCurrentChangeTracking(ctx context.Context, t tableI
 var errInvalidLastSyncVersion = fmt.Errorf("min valid version is newer than last sync version")
 
 func (cmd *cmdReplicate) getLastValidSyncVersion(t tableInfo) (int64, error) {
-	lastVer, err := cmd.metaDB.getLastSyncVersion(t)
+	lastVer, err := cmd.metaDB.getChangeTrackingLastVersion(t)
 	if err != nil {
 		return 0, fmt.Errorf("get last sync version: %w", err)
 	}

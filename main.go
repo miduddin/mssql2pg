@@ -72,8 +72,8 @@ func main() {
 	}
 }
 
-func openDatabases(cfg config) (*sourceDB, *destinationDB, *metaDB, error) {
-	src, err := newSourceDB(
+func openDatabases(cfg config) (*mssql, *postgres, *sqlite, error) {
+	src, err := newMssql(
 		cfg.SourceDatabaseUser,
 		cfg.SourceDatabasePass,
 		cfg.SourceDatabaseHost,
@@ -83,7 +83,7 @@ func openDatabases(cfg config) (*sourceDB, *destinationDB, *metaDB, error) {
 		return nil, nil, nil, fmt.Errorf("open src db: %w", err)
 	}
 
-	dst, err := newDestinationDB(
+	dst, err := newPostgres(
 		cfg.DestinationDatabaseUser,
 		cfg.DestinationDatabasePass,
 		cfg.DestinationDatabaseHost,
@@ -93,7 +93,7 @@ func openDatabases(cfg config) (*sourceDB, *destinationDB, *metaDB, error) {
 		return nil, nil, nil, fmt.Errorf("open dst db: %w", err)
 	}
 
-	meta, err := newMetaDB(cfg.MetaDatabasePath)
+	meta, err := newSqlite(cfg.MetaDatabasePath)
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("open meta db: %w", err)
 	}

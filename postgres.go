@@ -11,11 +11,11 @@ import (
 	"github.com/lib/pq"
 )
 
-type destinationDB struct {
+type postgres struct {
 	db *sqlx.DB
 }
 
-func newDestinationDB(user, pass, host, dbname string) (*destinationDB, error) {
+func newPostgres(user, pass, host, dbname string) (*postgres, error) {
 	os.Unsetenv("PGSERVICEFILE")
 	db, err := sqlx.Connect("postgres", fmt.Sprintf(
 		"postgres://%s:%s@%s/%s?sslmode=disable",
@@ -25,16 +25,16 @@ func newDestinationDB(user, pass, host, dbname string) (*destinationDB, error) {
 		return nil, fmt.Errorf("open dst db: %w", err)
 	}
 
-	return &destinationDB{db: db}, nil
+	return &postgres{db: db}, nil
 }
 
-type dstForeignKey struct {
+type foreignKey struct {
 	t          tableInfo
 	name       string
 	definition string
 }
 
-func (db *destinationDB) getForeignKeys() ([]dstForeignKey, error) {
+func (db *postgres) getForeignKeys() ([]foreignKey, error) {
 	rows, err := db.db.Queryx(
 		`SELECT
 			conrelid::regclass,
@@ -48,10 +48,10 @@ func (db *destinationDB) getForeignKeys() ([]dstForeignKey, error) {
 		return nil, fmt.Errorf("sql select: %w", err)
 	}
 
-	ret := []dstForeignKey{}
+	ret := []foreignKey{}
 	for rows.Next() {
 		var schemaTable string
-		fk := dstForeignKey{}
+		fk := foreignKey{}
 		if err := rows.Scan(&schemaTable, &fk.name, &fk.definition); err != nil {
 			return nil, fmt.Errorf("row scan: %w", err)
 		}
@@ -75,7 +75,7 @@ func (db *destinationDB) getForeignKeys() ([]dstForeignKey, error) {
 	return ret, nil
 }
 
-func (db *destinationDB) dropForeignKeys(fks []dstForeignKey) error {
+func (db *postgres) dropForeignKeys(fks []foreignKey) error {
 	for _, fk := range fks {
 		_, err := db.db.Exec(fmt.Sprintf(
 			`ALTER TABLE "%s"."%s" DROP CONSTRAINT IF EXISTS "%s"`,
@@ -89,7 +89,7 @@ func (db *destinationDB) dropForeignKeys(fks []dstForeignKey) error {
 	return nil
 }
 
-func (db *destinationDB) createForeignKeys(fks []dstForeignKey) error {
+func (db *postgres) createForeignKeys(fks []foreignKey) error {
 	tx, err := db.db.Beginx()
 	if err != nil {
 		return fmt.Errorf("begin transaction: %w", err)
@@ -113,7 +113,7 @@ func (db *destinationDB) createForeignKeys(fks []dstForeignKey) error {
 	return nil
 }
 
-func (db *destinationDB) getPrimaryKeys(t tableInfo) ([]string, error) {
+func (db *postgres) getPrimaryKeys(t tableInfo) ([]string, error) {
 	tableName := t.name
 	if t.schema != "public" {
 		tableName = t.schema + "." + tableName
@@ -152,13 +152,13 @@ func (db *destinationDB) getPrimaryKeys(t tableInfo) ([]string, error) {
 	return ret, nil
 }
 
-type dstIndex struct {
-	t    tableInfo
-	name string
-	def  string
+type index struct {
+	table tableInfo
+	name  string
+	def   string
 }
 
-func (db *destinationDB) getIndexes(t tableInfo) ([]dstIndex, error) {
+func (db *postgres) getIndexes(t tableInfo) ([]index, error) {
 	rows, err := db.db.Queryx(
 		`SELECT indexname, indexdef
 		FROM pg_indexes
@@ -170,14 +170,14 @@ func (db *destinationDB) getIndexes(t tableInfo) ([]dstIndex, error) {
 		return nil, fmt.Errorf("sql query: %w", err)
 	}
 
-	var ret []dstIndex
+	var ret []index
 	for rows.Next() {
 		var ixn, ixd string
 		if err := rows.Scan(&ixn, &ixd); err != nil {
 			return nil, fmt.Errorf("scan row: %w", err)
 		}
 
-		ret = append(ret, dstIndex{t: t, name: ixn, def: ixd})
+		ret = append(ret, index{table: t, name: ixn, def: ixd})
 	}
 
 	if err := rows.Err(); err != nil {
@@ -187,22 +187,22 @@ func (db *destinationDB) getIndexes(t tableInfo) ([]dstIndex, error) {
 	return ret, nil
 }
 
-func (db *destinationDB) dropIndexes(ixs []dstIndex) error {
+func (db *postgres) dropIndexes(ixs []index) error {
 	re := regexp.MustCompile(".+? cannot drop index .+? because constraint .+? on table .+? requires it")
 
 	for _, ix := range ixs {
-		_, err := db.db.Exec(fmt.Sprintf(`DROP INDEX "%s"."%s"`, ix.t.schema, ix.name))
+		_, err := db.db.Exec(fmt.Sprintf(`DROP INDEX "%s"."%s"`, ix.table.schema, ix.name))
 
 		// Ignore indexes from constraints.
 		if err != nil && !re.MatchString(err.Error()) {
-			return fmt.Errorf("drop index '%s.%s': %w", ix.t.schema, ix.name, err)
+			return fmt.Errorf("drop index '%s.%s': %w", ix.table.schema, ix.name, err)
 		}
 	}
 
 	return nil
 }
 
-func (db *destinationDB) createIndexes(ctx context.Context, ixs []dstIndex) error {
+func (db *postgres) createIndexes(ctx context.Context, ixs []index) error {
 	for _, ix := range ixs {
 		_, err := db.db.ExecContext(ctx, strings.Replace(ix.def, " INDEX ", " INDEX IF NOT EXISTS ", 1))
 		if err != nil {
@@ -213,7 +213,7 @@ func (db *destinationDB) createIndexes(ctx context.Context, ixs []dstIndex) erro
 	return nil
 }
 
-func (db *destinationDB) getRowCount(t tableInfo) (int64, error) {
+func (db *postgres) getRowCount(t tableInfo) (int64, error) {
 	var count int64
 	err := db.db.QueryRowx(fmt.Sprintf(
 		`SELECT count(*) FROM "%s"."%s"`,
@@ -223,7 +223,7 @@ func (db *destinationDB) getRowCount(t tableInfo) (int64, error) {
 	return count, err
 }
 
-func (db *destinationDB) insertRows(ctx context.Context, t tableInfo, truncateFirst bool, batchSize uint, input <-chan rowdata, cb func()) (lastInsertedID any, err error) {
+func (db *postgres) insertRows(ctx context.Context, t tableInfo, truncateFirst bool, batchSize uint, input <-chan rowData, cb func()) (lastInsertedID any, err error) {
 	if truncateFirst {
 		_, err := db.db.Exec(fmt.Sprintf(`TRUNCATE TABLE "%s"."%s"`, t.schema, t.name))
 		if err != nil {
@@ -315,7 +315,7 @@ func (db *destinationDB) insertRows(ctx context.Context, t tableInfo, truncateFi
 	}
 }
 
-func (db *destinationDB) writeTableChanges(ctx context.Context, t tableInfo, input <-chan tablechange, cb func(*tablechange)) (uint, error) {
+func (db *postgres) writeRowChanges(ctx context.Context, t tableInfo, input <-chan rowChange, cb func(*rowChange)) (uint, error) {
 	var n uint = 0
 	for {
 		select {
@@ -354,7 +354,7 @@ func (db *destinationDB) writeTableChanges(ctx context.Context, t tableInfo, inp
 	}
 }
 
-func (db *destinationDB) upsertRow(t tableInfo, primaryKeys, data rowdata) error {
+func (db *postgres) upsertRow(t tableInfo, primaryKeys, data rowData) error {
 	n := len(data)
 	cols := make([]string, n)
 	insertParams := make([]string, n)
@@ -412,7 +412,7 @@ func (db *destinationDB) upsertRow(t tableInfo, primaryKeys, data rowdata) error
 	return nil
 }
 
-func (db *destinationDB) deleteRow(t tableInfo, primaryKeys rowdata) error {
+func (db *postgres) deleteRow(t tableInfo, primaryKeys rowData) error {
 	filters := make([]string, len(primaryKeys))
 	values := make([]any, len(primaryKeys))
 	i := 0

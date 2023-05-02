@@ -12,14 +12,14 @@ import (
 )
 
 type cmdFullCopy struct {
-	srcDB     *sourceDB
-	dstDB     *destinationDB
-	metaDB    *metaDB
+	srcDB     *mssql
+	dstDB     *postgres
+	metaDB    *sqlite
 	batchSize uint
 	tables    []string
 }
 
-func newCmdFullCopy(srcDB *sourceDB, dstDB *destinationDB, metaDB *metaDB, batchSize uint, tables []string) *cmdFullCopy {
+func newCmdFullCopy(srcDB *mssql, dstDB *postgres, metaDB *sqlite, batchSize uint, tables []string) *cmdFullCopy {
 	return &cmdFullCopy{
 		srcDB:     srcDB,
 		dstDB:     dstDB,
@@ -36,7 +36,7 @@ func (cmd *cmdFullCopy) start(ctx context.Context) error {
 	}
 	tables = tables[len(tables)-len(cmd.tables):]
 
-	if err := saveAndDropDstForeignKeys(cmd.dstDB, cmd.metaDB); err != nil {
+	if err := stashDstForeignKeys(cmd.dstDB, cmd.metaDB); err != nil {
 		return fmt.Errorf("backup & drop foreign keys: %w", err)
 	}
 
@@ -68,12 +68,12 @@ func (cmd *cmdFullCopy) start(ctx context.Context) error {
 }
 
 func (cmd *cmdFullCopy) truncateAndCopy(ctx context.Context, t tableInfo) error {
-	if err := saveAndDropDstIndexes(cmd.dstDB, cmd.metaDB, t); err != nil {
+	if err := stashDstIndexes(cmd.dstDB, cmd.metaDB, t); err != nil {
 		return fmt.Errorf("save and drop dst indexes: %w", err)
 	}
 
 	var (
-		rowChan        = make(chan rowdata)
+		rowChan        = make(chan rowData)
 		errChan        = make(chan error, 2)
 		newCtx, cancel = context.WithCancel(ctx)
 		wg             = &sync.WaitGroup{}

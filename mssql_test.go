@@ -11,7 +11,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func Test_sourceDB_getTables(t *testing.T) {
+func Test_mssql_getTables(t *testing.T) {
 	srcDB, _, _ := openTestDB(t)
 
 	initDB := func(t *testing.T) {
@@ -105,7 +105,7 @@ func Test_sourceDB_getTables(t *testing.T) {
 	})
 }
 
-func Test_sourceDB_enableChangeTracking(t *testing.T) {
+func Test_mssql_enableChangeTracking(t *testing.T) {
 	srcDB, _, _ := openTestDB(t)
 	table := tableInfo{schema: "test", name: "some_table"}
 
@@ -154,7 +154,7 @@ func Test_sourceDB_enableChangeTracking(t *testing.T) {
 	})
 }
 
-func Test_sourceDB_readRowsWithPK(t *testing.T) {
+func Test_mssql_readRowsWithPK(t *testing.T) {
 	srcDB, _, _ := openTestDB(t)
 	table := tableInfo{schema: "test", name: "some_table"}
 
@@ -190,20 +190,20 @@ func Test_sourceDB_readRowsWithPK(t *testing.T) {
 
 	t.Run("reads data from source DB", func(t *testing.T) {
 		initDB(t)
-		ch := make(chan rowdata, 2)
+		ch := make(chan rowData, 2)
 
 		err := srcDB.readRowsWithPK(context.Background(), table, nil, ch)
 
 		assert.NoError(t, err)
 
-		var rows []rowdata
+		var rows []rowData
 		close(ch)
 		for rd := range ch {
 			rows = append(rows, rd)
 		}
 
 		assert.Equal(t,
-			[]rowdata{
+			[]rowData{
 				{
 					"id1":  "1a2b3c4d-5a6b-7c8d-9910-111213141516",
 					"id2":  int64(1),
@@ -231,7 +231,7 @@ func Test_sourceDB_readRowsWithPK(t *testing.T) {
 
 	t.Run("returns error when context is done", func(t *testing.T) {
 		initDB(t)
-		ch := make(chan rowdata)
+		ch := make(chan rowData)
 		ctx, cancel := context.WithCancel(context.Background())
 		wait := make(chan struct{})
 
@@ -261,27 +261,27 @@ func Test_sourceDB_readRowsWithPK(t *testing.T) {
 		t.Cleanup(func() {
 			srcDB.db.MustExec("DROP TABLE test.other_table")
 		})
-		ch := make(chan rowdata, 2)
+		ch := make(chan rowData, 2)
 
 		err := srcDB.readRowsWithPK(context.Background(), tableInfo{schema: "test", name: "other_table"}, 1, ch)
 
 		assert.NoError(t, err)
 
-		var rows []rowdata
+		var rows []rowData
 		close(ch)
 		for rd := range ch {
 			rows = append(rows, rd)
 		}
 
-		assert.Equal(t, []rowdata{{"id": int64(2), "val": int64(3)}}, rows)
+		assert.Equal(t, []rowData{{"id": int64(2), "val": int64(3)}}, rows)
 
-		ch = make(chan rowdata, 2)
+		ch = make(chan rowData, 2)
 
 		err = srcDB.readRowsWithPK(context.Background(), tableInfo{schema: "test", name: "other_table"}, 2, ch)
 
 		assert.NoError(t, err)
 
-		rows = []rowdata{}
+		rows = []rowData{}
 		close(ch)
 		for rd := range ch {
 			rows = append(rows, rd)
@@ -306,7 +306,7 @@ func Test_sourceDB_readRowsWithPK(t *testing.T) {
 		t.Cleanup(func() {
 			srcDB.db.MustExec("DROP TABLE test.other_table")
 		})
-		ch := make(chan rowdata, 2)
+		ch := make(chan rowData, 2)
 
 		err := srcDB.readRowsWithPK(context.Background(), tableInfo{schema: "test", name: "other_table"}, 1, ch)
 
@@ -314,7 +314,7 @@ func Test_sourceDB_readRowsWithPK(t *testing.T) {
 	})
 }
 
-func Test_sourceDB_getPrimaryKeys(t *testing.T) {
+func Test_mssql_getPrimaryKeys(t *testing.T) {
 	srcDB, _, _ := openTestDB(t)
 
 	initDB := func(t *testing.T) {
@@ -364,7 +364,7 @@ func Test_sourceDB_getPrimaryKeys(t *testing.T) {
 	})
 }
 
-func Test_sourceDB_readTableChanges(t *testing.T) {
+func Test_mssql_readTableChanges(t *testing.T) {
 	srcDB, _, _ := openTestDB(t)
 	table := tableInfo{schema: "test", name: "some_table"}
 
@@ -399,9 +399,9 @@ func Test_sourceDB_readTableChanges(t *testing.T) {
 
 	t.Run("returns changetable entries", func(t *testing.T) {
 		initDB(t)
-		ch := make(chan tablechange, 3)
+		ch := make(chan rowChange, 3)
 
-		n, err := srcDB.readTableChanges(context.Background(), table, 0, ch)
+		n, err := srcDB.readRowChanges(context.Background(), table, 0, ch)
 
 		assert.NoError(t, err)
 		assert.Equal(t, uint(0), n)
@@ -413,38 +413,38 @@ func Test_sourceDB_readTableChanges(t *testing.T) {
 			DELETE FROM test.some_table WHERE id1 = 1 AND id2 = 3;
 		`)
 
-		n, err = srcDB.readTableChanges(context.Background(), table, 0, ch)
+		n, err = srcDB.readRowChanges(context.Background(), table, 0, ch)
 
 		assert.NoError(t, err)
 		assert.Equal(t, uint(3), n)
 
-		var entries []tablechange
+		var entries []rowChange
 		close(ch)
 		for e := range ch {
 			entries = append(entries, e)
 		}
 
 		assert.Len(t, entries, 3)
-		assert.Contains(t, entries, tablechange{
+		assert.Contains(t, entries, rowChange{
 			operation:   "I",
-			primaryKeys: rowdata{"id1": int64(1), "id2": int64(4)},
-			rowdata:     rowdata{"id1": int64(1), "id2": int64(4), "content": "baz"},
+			primaryKeys: rowData{"id1": int64(1), "id2": int64(4)},
+			rowdata:     rowData{"id1": int64(1), "id2": int64(4), "content": "baz"},
 		})
-		assert.Contains(t, entries, tablechange{
+		assert.Contains(t, entries, rowChange{
 			operation:   "U",
-			primaryKeys: rowdata{"id1": int64(1), "id2": int64(2)},
-			rowdata:     rowdata{"id1": int64(1), "id2": int64(2), "content": "qux"},
+			primaryKeys: rowData{"id1": int64(1), "id2": int64(2)},
+			rowdata:     rowData{"id1": int64(1), "id2": int64(2), "content": "qux"},
 		})
-		assert.Contains(t, entries, tablechange{
+		assert.Contains(t, entries, rowChange{
 			operation:   "D",
-			primaryKeys: rowdata{"id1": int64(1), "id2": int64(3)},
+			primaryKeys: rowData{"id1": int64(1), "id2": int64(3)},
 			rowdata:     nil,
 		})
 	})
 
 	t.Run("returns error when context is done", func(t *testing.T) {
 		initDB(t)
-		ch := make(chan tablechange)
+		ch := make(chan rowChange)
 		ctx, cancel := context.WithCancel(context.Background())
 		wait := make(chan struct{})
 
@@ -455,7 +455,7 @@ func Test_sourceDB_readTableChanges(t *testing.T) {
 		`)
 
 		go func() {
-			_, err := srcDB.readTableChanges(ctx, table, 0, ch)
+			_, err := srcDB.readRowChanges(ctx, table, 0, ch)
 
 			assert.EqualError(t, err, "read change table aborted, reason: context canceled")
 			close(wait)
@@ -467,7 +467,7 @@ func Test_sourceDB_readTableChanges(t *testing.T) {
 	})
 }
 
-func Test_sourceDB_getRow(t *testing.T) {
+func Test_mssql_getRow(t *testing.T) {
 	srcDB, _, _ := openTestDB(t)
 	table := tableInfo{schema: "test", name: "some_table"}
 
@@ -504,11 +504,11 @@ func Test_sourceDB_getRow(t *testing.T) {
 	t.Run("returns existing row", func(t *testing.T) {
 		initDB(t)
 
-		row, err := srcDB.getRow(table, rowdata{"id1": "1a2b3c4d-5a6b-7c8d-9910-111213141517", "id2": 3})
+		row, err := srcDB.getRow(table, rowData{"id1": "1a2b3c4d-5a6b-7c8d-9910-111213141517", "id2": 3})
 
 		assert.NoError(t, err)
 		assert.Equal(t,
-			rowdata{
+			rowData{
 				"id1":  "1a2b3c4d-5a6b-7c8d-9910-111213141517",
 				"id2":  int64(3),
 				"val1": "bar",
@@ -525,7 +525,7 @@ func Test_sourceDB_getRow(t *testing.T) {
 	t.Run("returns nil without error on missing row", func(t *testing.T) {
 		initDB(t)
 
-		row, err := srcDB.getRow(table, rowdata{"id1": "1a2b3c4d-5a6b-7c8d-9910-111213141511", "id2": 4})
+		row, err := srcDB.getRow(table, rowData{"id1": "1a2b3c4d-5a6b-7c8d-9910-111213141511", "id2": 4})
 
 		assert.NoError(t, err)
 		assert.Nil(t, row)

@@ -38,11 +38,11 @@ CREATE TABLE IF NOT EXISTS indexes (
 );
 `
 
-type metaDB struct {
+type sqlite struct {
 	db *sqlx.DB
 }
 
-func newMetaDB(dbPath string) (*metaDB, error) {
+func newSqlite(dbPath string) (*sqlite, error) {
 	db, err := sqlx.Connect("sqlite3", dbPath)
 	if err != nil {
 		return nil, fmt.Errorf("open db: %w", err)
@@ -50,10 +50,10 @@ func newMetaDB(dbPath string) (*metaDB, error) {
 
 	db.MustExec(metaDBSchema)
 
-	return &metaDB{db}, nil
+	return &sqlite{db}, nil
 }
 
-func (db *metaDB) hasSavedForeignKeys() (bool, error) {
+func (db *sqlite) hasSavedForeignKeys() (bool, error) {
 	var count int
 	if err := db.db.QueryRowx(`SELECT count(*) FROM foreign_keys`).Scan(&count); err != nil {
 		return false, fmt.Errorf("sql select: %w", err)
@@ -62,10 +62,10 @@ func (db *metaDB) hasSavedForeignKeys() (bool, error) {
 	return count > 0, nil
 }
 
-func (db *metaDB) saveForeignKeys(fks []dstForeignKey) error {
-	data := make([]rowdata, len(fks))
+func (db *sqlite) insertSavedForeignKeys(fks []foreignKey) error {
+	data := make([]rowData, len(fks))
 	for i, fk := range fks {
-		data[i] = rowdata{
+		data[i] = rowData{
 			"schema_name":   fk.t.schema,
 			"table_name":    fk.t.name,
 			"fk_name":       fk.name,
@@ -85,7 +85,7 @@ func (db *metaDB) saveForeignKeys(fks []dstForeignKey) error {
 	return nil
 }
 
-func (db *metaDB) getSavedForeignKeys() ([]dstForeignKey, error) {
+func (db *sqlite) getSavedForeignKeys() ([]foreignKey, error) {
 	rows, err := db.db.Queryx(`
 		SELECT
 			schema_name,
@@ -98,9 +98,9 @@ func (db *metaDB) getSavedForeignKeys() ([]dstForeignKey, error) {
 		return nil, fmt.Errorf("sql select: %w", err)
 	}
 
-	ret := []dstForeignKey{}
+	ret := []foreignKey{}
 	for rows.Next() {
-		fk := dstForeignKey{}
+		fk := foreignKey{}
 		if err := rows.Scan(&fk.t.schema, &fk.t.name, &fk.name, &fk.definition); err != nil {
 			return nil, fmt.Errorf("scan row: %w", err)
 		}
@@ -115,7 +115,7 @@ func (db *metaDB) getSavedForeignKeys() ([]dstForeignKey, error) {
 	return ret, nil
 }
 
-func (db *metaDB) getDstIndexes(t tableInfo) ([]dstIndex, error) {
+func (db *sqlite) getSavedIndexes(t tableInfo) ([]index, error) {
 	rows, err := db.db.Queryx(
 		`SELECT index_name, index_def
 		FROM indexes
@@ -126,14 +126,14 @@ func (db *metaDB) getDstIndexes(t tableInfo) ([]dstIndex, error) {
 		return nil, fmt.Errorf("sql query: %w", err)
 	}
 
-	var ret []dstIndex
+	var ret []index
 	for rows.Next() {
 		var ixn, ixd string
 		if err := rows.Scan(&ixn, &ixd); err != nil {
 			return nil, fmt.Errorf("scan row: %w", err)
 		}
 
-		ret = append(ret, dstIndex{t: t, name: ixn, def: ixd})
+		ret = append(ret, index{table: t, name: ixn, def: ixd})
 	}
 
 	if err := rows.Err(); err != nil {
@@ -143,16 +143,16 @@ func (db *metaDB) getDstIndexes(t tableInfo) ([]dstIndex, error) {
 	return ret, nil
 }
 
-func (db *metaDB) saveDstIndexes(ixs []dstIndex) error {
+func (db *sqlite) insertSavedIndexes(ixs []index) error {
 	if len(ixs) == 0 {
 		return nil
 	}
 
-	data := make([]rowdata, len(ixs))
+	data := make([]rowData, len(ixs))
 	for i, ix := range ixs {
-		data[i] = rowdata{
-			"schema_name": ix.t.schema,
-			"table_name":  ix.t.name,
+		data[i] = rowData{
+			"schema_name": ix.table.schema,
+			"table_name":  ix.table.name,
 			"index_name":  ix.name,
 			"index_def":   ix.def,
 		}
@@ -168,7 +168,7 @@ func (db *metaDB) saveDstIndexes(ixs []dstIndex) error {
 	return err
 }
 
-func (db *metaDB) deleteDstIndexes(t tableInfo) error {
+func (db *sqlite) truncateSavedIndexes(t tableInfo) error {
 	_, err := db.db.Exec(
 		`DELETE FROM indexes WHERE schema_name = ? AND table_name = ?`,
 		t.schema, t.name,
@@ -177,7 +177,7 @@ func (db *metaDB) deleteDstIndexes(t tableInfo) error {
 	return err
 }
 
-func (db *metaDB) saveChangeTrackingVersion(t tableInfo, ver int64) error {
+func (db *sqlite) upsertChangeTrackingVersion(t tableInfo, ver int64) error {
 	// Insert first to make sure table data exist.
 	db.db.Exec(
 		`INSERT INTO replication_progress (schema_name, table_name)
@@ -195,7 +195,7 @@ func (db *metaDB) saveChangeTrackingVersion(t tableInfo, ver int64) error {
 	return err
 }
 
-func (db *metaDB) getInitialCopyStatus(t tableInfo) (done bool, lastID string, err error) {
+func (db *sqlite) getInitialCopyStatus(t tableInfo) (done bool, lastID string, err error) {
 	// Insert first to DB for this table, ignore error if already exist.
 	db.db.Exec(
 		`INSERT INTO replication_progress (schema_name, table_name) VALUES (?, ?)`,
@@ -216,7 +216,7 @@ func (db *metaDB) getInitialCopyStatus(t tableInfo) (done bool, lastID string, e
 	return done, ns.String, nil
 }
 
-func (db *metaDB) updateInitialCopyLastID(t tableInfo, id any) error {
+func (db *sqlite) updateInitialCopyLastID(t tableInfo, id any) error {
 	_, err := db.db.Exec(
 		`UPDATE replication_progress
 		SET initial_copy_last_id = ?
@@ -226,7 +226,7 @@ func (db *metaDB) updateInitialCopyLastID(t tableInfo, id any) error {
 	return err
 }
 
-func (db *metaDB) markInitialCopyDone(t tableInfo) error {
+func (db *sqlite) markInitialCopyDone(t tableInfo) error {
 	_, err := db.db.Exec(
 		`UPDATE replication_progress
 		SET initial_copy_done = 1
@@ -240,7 +240,7 @@ func (db *metaDB) markInitialCopyDone(t tableInfo) error {
 	return nil
 }
 
-func (db *metaDB) getLastSyncVersion(t tableInfo) (int64, error) {
+func (db *sqlite) getChangeTrackingLastVersion(t tableInfo) (int64, error) {
 	var ver int64
 	err := db.db.QueryRowx(
 		`SELECT change_tracking_last_version

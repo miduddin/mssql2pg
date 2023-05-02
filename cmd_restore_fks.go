@@ -5,8 +5,8 @@ import (
 )
 
 type cmdRestoreFKs struct {
-	dstDB  *destinationDB
-	metaDB *metaDB
+	dstDB  *postgres
+	metaDB *sqlite
 }
 
 func (cmd *cmdRestoreFKs) start() error {

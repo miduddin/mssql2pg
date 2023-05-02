@@ -8,7 +8,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func Test_destinationDB_getForeignKeys(t *testing.T) {
+func Test_postgres_getForeignKeys(t *testing.T) {
 	_, dstDB, _ := openTestDB(t)
 
 	initDB := func(t *testing.T) {
@@ -47,7 +47,7 @@ func Test_destinationDB_getForeignKeys(t *testing.T) {
 
 		assert.NoError(t, err)
 		assert.Equal(t,
-			[]dstForeignKey{
+			[]foreignKey{
 				{
 					t:          tableInfo{schema: "test", name: "table2"},
 					name:       "table2_table1_fk",
@@ -69,7 +69,7 @@ func Test_destinationDB_getForeignKeys(t *testing.T) {
 	})
 }
 
-func Test_destinationDB_dropForeignKeys(t *testing.T) {
+func Test_postgres_dropForeignKeys(t *testing.T) {
 	_, dstDB, _ := openTestDB(t)
 
 	initDB := func(t *testing.T) {
@@ -104,7 +104,7 @@ func Test_destinationDB_dropForeignKeys(t *testing.T) {
 
 		assert.Equal(t, 2, countFKs())
 
-		err := dstDB.dropForeignKeys([]dstForeignKey{
+		err := dstDB.dropForeignKeys([]foreignKey{
 			{t: tableInfo{schema: "test", name: "table2"}, name: "table2_table1_fk"},
 			{t: tableInfo{schema: "test", name: "table3"}, name: "table3_table1_fk"},
 			{t: tableInfo{schema: "test", name: "table3"}, name: "table3_table2_fake_fk"},
@@ -115,7 +115,7 @@ func Test_destinationDB_dropForeignKeys(t *testing.T) {
 	})
 }
 
-func Test_destinationDB_getPrimaryKeys(t *testing.T) {
+func Test_postgres_getPrimaryKeys(t *testing.T) {
 	_, dstDB, _ := openTestDB(t)
 
 	initDB := func(t *testing.T) {
@@ -159,7 +159,7 @@ func Test_destinationDB_getPrimaryKeys(t *testing.T) {
 	})
 }
 
-func Test_destinationDB_getIndexes(t *testing.T) {
+func Test_postgres_getIndexes(t *testing.T) {
 	_, dstDB, _ := openTestDB(t)
 	table := tableInfo{schema: "test", name: "table1"}
 
@@ -196,10 +196,10 @@ func Test_destinationDB_getIndexes(t *testing.T) {
 
 		assert.NoError(t, err)
 		assert.Equal(t,
-			[]dstIndex{
-				{t: table, name: "index1", def: "CREATE INDEX index1 ON test.table1 USING btree (id, val)"},
-				{t: table, name: "index2", def: "CREATE INDEX index2 ON test.table1 USING btree (val)"},
-				{t: table, name: "table1_pkey", def: "CREATE UNIQUE INDEX table1_pkey ON test.table1 USING btree (id)"},
+			[]index{
+				{table: table, name: "index1", def: "CREATE INDEX index1 ON test.table1 USING btree (id, val)"},
+				{table: table, name: "index2", def: "CREATE INDEX index2 ON test.table1 USING btree (val)"},
+				{table: table, name: "table1_pkey", def: "CREATE UNIQUE INDEX table1_pkey ON test.table1 USING btree (id)"},
 			},
 			ixs,
 		)
@@ -224,7 +224,7 @@ func Test_destinationDB_getIndexes(t *testing.T) {
 	})
 }
 
-func Test_destinationDB_dropIndexes(t *testing.T) {
+func Test_postgres_dropIndexes(t *testing.T) {
 	_, dstDB, _ := openTestDB(t)
 	table := tableInfo{schema: "test", name: "table1"}
 
@@ -268,10 +268,10 @@ func Test_destinationDB_dropIndexes(t *testing.T) {
 
 		assert.Equal(t, 3, countIndexes(table))
 
-		err := dstDB.dropIndexes([]dstIndex{
-			{t: tableInfo{schema: "test"}, name: "table1_pkey"},
-			{t: tableInfo{schema: "test"}, name: "index1"},
-			{t: tableInfo{schema: "test"}, name: "index2"},
+		err := dstDB.dropIndexes([]index{
+			{table: tableInfo{schema: "test"}, name: "table1_pkey"},
+			{table: tableInfo{schema: "test"}, name: "index1"},
+			{table: tableInfo{schema: "test"}, name: "index2"},
 		})
 
 		assert.NoError(t, err)
@@ -279,7 +279,7 @@ func Test_destinationDB_dropIndexes(t *testing.T) {
 	})
 }
 
-func Test_destinationDB_createIndexes(t *testing.T) {
+func Test_postgres_createIndexes(t *testing.T) {
 	_, dstDB, _ := openTestDB(t)
 	table := tableInfo{schema: "test", name: "table1"}
 
@@ -319,7 +319,7 @@ func Test_destinationDB_createIndexes(t *testing.T) {
 
 		assert.Equal(t, 1, countIndexes(table))
 
-		err := dstDB.createIndexes(context.Background(), []dstIndex{
+		err := dstDB.createIndexes(context.Background(), []index{
 			{def: "CREATE INDEX index1 ON test.table1 USING btree (id, val)"},
 			{def: "CREATE INDEX index2 ON test.table1 USING btree (val)"},
 			{def: "CREATE UNIQUE INDEX table1_pkey ON test.table1 USING btree (id)"},
@@ -330,7 +330,7 @@ func Test_destinationDB_createIndexes(t *testing.T) {
 	})
 }
 
-func Test_destinationDB_insertRows(t *testing.T) {
+func Test_postgres_insertRows(t *testing.T) {
 	_, dstDB, _ := openTestDB(t)
 	table := tableInfo{schema: "test", name: "some_table"}
 
@@ -358,8 +358,8 @@ func Test_destinationDB_insertRows(t *testing.T) {
 	t.Run("truncating existing table & writes given input data", func(t *testing.T) {
 		initDB(t)
 		dstDB.db.MustExec("INSERT INTO test.some_table (id1, id2) VALUES ('1a2b3c4d-5a6b-7c8d-9910-111213141516', 13)")
-		ch := make(chan rowdata, 3)
-		ch <- rowdata{
+		ch := make(chan rowData, 3)
+		ch <- rowData{
 			"id1":  "1a2b3c4d-5a6b-7c8d-9910-111213141516",
 			"id2":  1,
 			"val1": "foo",
@@ -369,7 +369,7 @@ func Test_destinationDB_insertRows(t *testing.T) {
 			"val5": time.Date(2020, 1, 2, 15, 4, 5, 0, time.UTC),
 			"val6": "A",
 		}
-		ch <- rowdata{
+		ch <- rowData{
 			"id1":  "1a2b3c4d-5a6b-7c8d-9910-111213141517",
 			"id2":  3,
 			"val1": "bar",
@@ -385,7 +385,7 @@ func Test_destinationDB_insertRows(t *testing.T) {
 
 		assert.NoError(t, err)
 		assert.Equal(t,
-			[]rowdata{
+			[]rowData{
 				{
 					"id1":  []byte("1a2b3c4d-5a6b-7c8d-9910-111213141516"),
 					"id2":  int64(1),
@@ -413,7 +413,7 @@ func Test_destinationDB_insertRows(t *testing.T) {
 
 	t.Run("returns error when context is done", func(t *testing.T) {
 		initDB(t)
-		ch := make(chan rowdata)
+		ch := make(chan rowData)
 		ctx, cancel := context.WithCancel(context.Background())
 		wait := make(chan struct{})
 
@@ -432,14 +432,14 @@ func Test_destinationDB_insertRows(t *testing.T) {
 	t.Run("only truncates table when input is empty", func(t *testing.T) {
 		initDB(t)
 		dstDB.db.MustExec("INSERT INTO test.some_table (id1, id2) VALUES ('1a2b3c4d-5a6b-7c8d-9910-111213141516', 13)")
-		ch := make(chan rowdata, 3)
+		ch := make(chan rowData, 3)
 		close(ch)
 
 		_, err := dstDB.insertRows(context.Background(), table, true, 10, ch, func() {})
 
 		assert.NoError(t, err)
 		assert.Equal(t,
-			[]rowdata{},
+			[]rowData{},
 			getAllData(t, dstDB.db, table, "id1 ASC, id2 ASC"),
 		)
 	})
@@ -447,10 +447,10 @@ func Test_destinationDB_insertRows(t *testing.T) {
 	t.Run("able to process large amount of input in batch", func(t *testing.T) {
 		initDB(t)
 		dstDB.db.MustExec(`CREATE TABLE test.more_table(id INT)`)
-		ch := make(chan rowdata)
+		ch := make(chan rowData)
 		go func() {
 			for i := 0; i < 212; i++ {
-				ch <- rowdata{"id": i + 1}
+				ch <- rowData{"id": i + 1}
 			}
 			close(ch)
 		}()
@@ -462,15 +462,15 @@ func Test_destinationDB_insertRows(t *testing.T) {
 		data := getAllData(t, dstDB.db, tableInfo{schema: "test", name: "more_table"}, "id")
 		assert.Len(t, data, 212)
 		for i, r := range data {
-			assert.Equal(t, rowdata{"id": int64(i + 1)}, r)
+			assert.Equal(t, rowData{"id": int64(i + 1)}, r)
 		}
 	})
 
 	t.Run("able to insert data without truncating existing data", func(t *testing.T) {
 		initDB(t)
 		dstDB.db.MustExec("INSERT INTO test.some_table (id1, id2) VALUES ('1a2b3c4d-5a6b-7c8d-9910-111213141516', 13)")
-		ch := make(chan rowdata, 3)
-		ch <- rowdata{
+		ch := make(chan rowData, 3)
+		ch <- rowData{
 			"id1":  "1a2b3c4d-5a6b-7c8d-9910-111213141516",
 			"id2":  1,
 			"val1": "foo",
@@ -480,7 +480,7 @@ func Test_destinationDB_insertRows(t *testing.T) {
 			"val5": time.Date(2020, 1, 2, 15, 4, 5, 0, time.UTC),
 			"val6": "A",
 		}
-		ch <- rowdata{
+		ch <- rowData{
 			"id1":  "1a2b3c4d-5a6b-7c8d-9910-111213141517",
 			"id2":  3,
 			"val1": "bar",
@@ -496,7 +496,7 @@ func Test_destinationDB_insertRows(t *testing.T) {
 
 		assert.NoError(t, err)
 		assert.Equal(t,
-			[]rowdata{
+			[]rowData{
 				{
 					"id1":  []byte("1a2b3c4d-5a6b-7c8d-9910-111213141516"),
 					"id2":  int64(1),
@@ -534,8 +534,8 @@ func Test_destinationDB_insertRows(t *testing.T) {
 
 	t.Run("does not last inserted ID if table has multi column PK", func(t *testing.T) {
 		initDB(t)
-		ch := make(chan rowdata, 3)
-		ch <- rowdata{
+		ch := make(chan rowData, 3)
+		ch <- rowData{
 			"id1":  "1a2b3c4d-5a6b-7c8d-9910-111213141516",
 			"id2":  1,
 			"val1": "foo",
@@ -545,7 +545,7 @@ func Test_destinationDB_insertRows(t *testing.T) {
 			"val5": time.Date(2020, 1, 2, 15, 4, 5, 0, time.UTC),
 			"val6": "A",
 		}
-		ch <- rowdata{
+		ch <- rowData{
 			"id1":  "1a2b3c4d-5a6b-7c8d-9910-111213141517",
 			"id2":  3,
 			"val1": "bar",
@@ -567,9 +567,9 @@ func Test_destinationDB_insertRows(t *testing.T) {
 		initDB(t)
 		dstDB.db.MustExec("CREATE TABLE test.more_table(id uuid PRIMARY KEY, val text)")
 
-		ch := make(chan rowdata, 3)
-		ch <- rowdata{"id": "1a2b3c4d-5a6b-7c8d-9910-111213141517", "val": "foo"}
-		ch <- rowdata{"id": "1a2b3c4d-5a6b-7c8d-9910-111213141516", "val": "bar"}
+		ch := make(chan rowData, 3)
+		ch <- rowData{"id": "1a2b3c4d-5a6b-7c8d-9910-111213141517", "val": "foo"}
+		ch <- rowData{"id": "1a2b3c4d-5a6b-7c8d-9910-111213141516", "val": "bar"}
 		close(ch)
 
 		lastID, err := dstDB.insertRows(context.Background(), tableInfo{schema: "test", name: "more_table"}, true, 10, ch, func() {})
@@ -579,7 +579,7 @@ func Test_destinationDB_insertRows(t *testing.T) {
 	})
 }
 
-func Test_destinationDB_writeTableChanges(t *testing.T) {
+func Test_postgres_writeRowChanges(t *testing.T) {
 	_, dstDB, _ := openTestDB(t)
 	table := tableInfo{schema: "test", name: "some_table"}
 
@@ -605,40 +605,40 @@ func Test_destinationDB_writeTableChanges(t *testing.T) {
 
 	t.Run("writes table changes to dst DB", func(t *testing.T) {
 		initDB(t)
-		ch := make(chan tablechange, 5)
-		ch <- tablechange{
+		ch := make(chan rowChange, 5)
+		ch <- rowChange{
 			operation:   "I",
-			primaryKeys: rowdata{"id1": 1, "id2": 5},
-			rowdata:     rowdata{"id1": 1, "id2": 5, "val": "baz"},
+			primaryKeys: rowData{"id1": 1, "id2": 5},
+			rowdata:     rowData{"id1": 1, "id2": 5, "val": "baz"},
 		}
-		ch <- tablechange{
+		ch <- rowChange{
 			operation:   "U",
-			primaryKeys: rowdata{"id1": 1, "id2": 2},
-			rowdata:     rowdata{"id1": 1, "id2": 2, "val": "qux"},
+			primaryKeys: rowData{"id1": 1, "id2": 2},
+			rowdata:     rowData{"id1": 1, "id2": 2, "val": "qux"},
 		}
-		ch <- tablechange{
+		ch <- rowChange{
 			operation:   "D",
-			primaryKeys: rowdata{"id1": 3, "id2": 4},
+			primaryKeys: rowData{"id1": 3, "id2": 4},
 			rowdata:     nil,
 		}
-		ch <- tablechange{ // Data deleted from source after table change is queried.
+		ch <- rowChange{ // Data deleted from source after table change is queried.
 			operation:   "I",
-			primaryKeys: rowdata{"id1": 1, "id2": 6},
+			primaryKeys: rowData{"id1": 1, "id2": 6},
 			rowdata:     nil,
 		}
-		ch <- tablechange{ // Repeat operation (e.g. caused by previously failed iteration).
+		ch <- rowChange{ // Repeat operation (e.g. caused by previously failed iteration).
 			operation:   "I",
-			primaryKeys: rowdata{"id1": 1, "id2": 5},
-			rowdata:     rowdata{"id1": 1, "id2": 5, "val": "baz"},
+			primaryKeys: rowData{"id1": 1, "id2": 5},
+			rowdata:     rowData{"id1": 1, "id2": 5, "val": "baz"},
 		}
 		close(ch)
 
-		n, err := dstDB.writeTableChanges(context.Background(), table, ch, nil)
+		n, err := dstDB.writeRowChanges(context.Background(), table, ch, nil)
 
 		assert.NoError(t, err)
 		assert.Equal(t, uint(4), n)
 		assert.Equal(t,
-			[]rowdata{
+			[]rowData{
 				{"id1": int64(1), "id2": int64(2), "val": "qux"},
 				{"id1": int64(1), "id2": int64(5), "val": "baz"},
 			},
@@ -648,12 +648,12 @@ func Test_destinationDB_writeTableChanges(t *testing.T) {
 
 	t.Run("returns error when context is done", func(t *testing.T) {
 		initDB(t)
-		ch := make(chan tablechange)
+		ch := make(chan rowChange)
 		ctx, cancel := context.WithCancel(context.Background())
 		wait := make(chan struct{})
 
 		go func() {
-			_, err := dstDB.writeTableChanges(ctx, table, ch, nil)
+			_, err := dstDB.writeRowChanges(ctx, table, ch, nil)
 
 			assert.EqualError(t, err, "write change table aborted, reason: context canceled")
 			close(wait)
@@ -665,7 +665,7 @@ func Test_destinationDB_writeTableChanges(t *testing.T) {
 	})
 }
 
-func Test_destinationDB_upsertRow(t *testing.T) {
+func Test_postgres_upsertRow(t *testing.T) {
 	_, dstDB, _ := openTestDB(t)
 	table := tableInfo{schema: "test", name: "some_table"}
 
@@ -695,13 +695,13 @@ func Test_destinationDB_upsertRow(t *testing.T) {
 
 		err := dstDB.upsertRow(
 			table,
-			rowdata{"id1": 1, "id2": 4},
-			rowdata{"id1": 1, "id2": 4, "content": "baz"},
+			rowData{"id1": 1, "id2": 4},
+			rowData{"id1": 1, "id2": 4, "content": "baz"},
 		)
 
 		assert.NoError(t, err)
 		assert.Equal(t,
-			[]rowdata{
+			[]rowData{
 				{"id1": int64(1), "id2": int64(2), "content": "foo"},
 				{"id1": int64(1), "id2": int64(3), "content": "bar"},
 				{"id1": int64(1), "id2": int64(4), "content": "baz"},
@@ -715,13 +715,13 @@ func Test_destinationDB_upsertRow(t *testing.T) {
 
 		err := dstDB.upsertRow(
 			table,
-			rowdata{"id1": 1, "id2": 2},
-			rowdata{"id1": 1, "id2": 2, "content": "baz"},
+			rowData{"id1": 1, "id2": 2},
+			rowData{"id1": 1, "id2": 2, "content": "baz"},
 		)
 
 		assert.NoError(t, err)
 		assert.Equal(t,
-			[]rowdata{
+			[]rowData{
 				{"id1": int64(1), "id2": int64(2), "content": "baz"},
 				{"id1": int64(1), "id2": int64(3), "content": "bar"},
 			},
@@ -730,7 +730,7 @@ func Test_destinationDB_upsertRow(t *testing.T) {
 	})
 }
 
-func Test_destinationDB_deleteRow(t *testing.T) {
+func Test_postgres_deleteRow(t *testing.T) {
 	_, dstDB, _ := openTestDB(t)
 	table := tableInfo{schema: "test", name: "some_table"}
 
@@ -756,11 +756,11 @@ func Test_destinationDB_deleteRow(t *testing.T) {
 	t.Run("deletes existing data", func(t *testing.T) {
 		initDB(t)
 
-		err := dstDB.deleteRow(table, rowdata{"id1": 1, "id2": 2})
+		err := dstDB.deleteRow(table, rowData{"id1": 1, "id2": 2})
 
 		assert.NoError(t, err)
 		assert.Equal(t,
-			[]rowdata{
+			[]rowData{
 				{"id1": int64(1), "id2": int64(3)},
 			},
 			getAllData(t, dstDB.db, table, "id1 ASC, id2 ASC"),
@@ -770,11 +770,11 @@ func Test_destinationDB_deleteRow(t *testing.T) {
 	t.Run("does not return error when deleting non-existent data", func(t *testing.T) {
 		initDB(t)
 
-		err := dstDB.deleteRow(table, rowdata{"id1": 2, "id2": 3})
+		err := dstDB.deleteRow(table, rowData{"id1": 2, "id2": 3})
 
 		assert.NoError(t, err)
 		assert.Equal(t,
-			[]rowdata{
+			[]rowData{
 				{"id1": int64(1), "id2": int64(2)},
 				{"id1": int64(1), "id2": int64(3)},
 			},

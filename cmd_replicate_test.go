@@ -131,14 +131,14 @@ func Test_cmdReplicate_start(t *testing.T) {
 		time.Sleep(400 * time.Millisecond)
 
 		assert.Equal(t,
-			[]rowdata{
+			[]rowData{
 				{"id": int64(1)},
 			},
 			getAllData(t, dstDB.db, tableInfo{schema: "s1", name: "t1"}, "id"),
 		)
 
 		assert.Equal(t,
-			[]rowdata{
+			[]rowData{
 				{"id": int64(2), "val": "lorem"},
 				{"id": int64(3), "val": "ipsum"},
 				{"id": int64(4), "val": "dolor"},
@@ -147,7 +147,7 @@ func Test_cmdReplicate_start(t *testing.T) {
 		)
 
 		assert.Equal(t,
-			[]rowdata{
+			[]rowData{
 				{
 					"id1":  []byte("1a2b3c4d-5a6b-7c8d-9910-111213141516"),
 					"id2":  int64(1),
@@ -183,7 +183,7 @@ func Test_cmdReplicate_start(t *testing.T) {
 		time.Sleep(100 * time.Millisecond)
 
 		assert.Equal(t,
-			[]rowdata{
+			[]rowData{
 				{"id": int64(1)},
 				{"id": int64(2)},
 			},
@@ -191,7 +191,7 @@ func Test_cmdReplicate_start(t *testing.T) {
 		)
 
 		assert.Equal(t,
-			[]rowdata{
+			[]rowData{
 				{"id": int64(2), "val": "lorem"},
 				{"id": int64(4), "val": "dolor"},
 			},
@@ -199,7 +199,7 @@ func Test_cmdReplicate_start(t *testing.T) {
 		)
 
 		assert.Equal(t,
-			[]rowdata{
+			[]rowData{
 				{
 					"id1":  []byte("1a2b3c4d-5a6b-7c8d-9910-111213141516"),
 					"id2":  int64(1),
@@ -256,7 +256,7 @@ func Test_cmdReplicate_start(t *testing.T) {
 		time.Sleep(400 * time.Millisecond)
 
 		assert.Equal(t,
-			[]rowdata{
+			[]rowData{
 				{"id": int64(3)},
 				{"id": int64(4)},
 			},
@@ -349,7 +349,7 @@ func Test_cmdReplicate_copyInitial(t *testing.T) {
 
 		assert.NoError(t, err)
 		assert.Equal(t,
-			[]rowdata{
+			[]rowData{
 				{
 					"id1":  []byte("1a2b3c4d-5a6b-7c8d-9910-111213141516"),
 					"id2":  int64(1),
@@ -406,7 +406,7 @@ func Test_cmdReplicate_copyInitial(t *testing.T) {
 
 		assert.NoError(t, err)
 		assert.Equal(t,
-			[]rowdata{
+			[]rowData{
 				{"id": []byte("1a2b3c4c-5a6b-7c8d-9910-111213141519"), "val": int64(1)},
 			},
 			getAllData(t, dstDB.db, tableInfo{schema: "test", name: "more_table"}, "id"),
@@ -442,7 +442,7 @@ func Test_cmdReplicate_copyInitial(t *testing.T) {
 
 		assert.NoError(t, err)
 		assert.Equal(t,
-			[]rowdata{
+			[]rowData{
 				{"id": int64(2), "val": int64(3)},
 			},
 			getAllData(t, dstDB.db, tableInfo{schema: "test", name: "more_table"}, "id"),
@@ -476,7 +476,7 @@ func Test_cmdReplicate_copyInitial(t *testing.T) {
 
 		assert.NoError(t, err)
 		assert.Equal(t,
-			[]rowdata{
+			[]rowData{
 				{
 					"id1":  []byte("1a2b3c4d-5a6b-7c8d-9910-111213141518"),
 					"id2":  int64(4),
@@ -652,14 +652,14 @@ func Test_cmdReplicate_copyChangeTracking(t *testing.T) {
 		time.Sleep(100 * time.Millisecond)
 
 		assert.Equal(t,
-			[]rowdata{
+			[]rowData{
 				{"id": int64(1)},
 			},
 			getAllData(t, dstDB.db, tableInfo{schema: "s1", name: "t1"}, "id"),
 		)
 
 		assert.Equal(t,
-			[]rowdata{
+			[]rowData{
 				{"id": int64(2), "val": "lorem"},
 				{"id": int64(3), "val": "ipsum"},
 				{"id": int64(4), "val": "dolor"},
@@ -668,7 +668,7 @@ func Test_cmdReplicate_copyChangeTracking(t *testing.T) {
 		)
 
 		assert.Equal(t,
-			[]rowdata{},
+			[]rowData{},
 			getAllData(t, dstDB.db, tableInfo{schema: "s2", name: "t3"}, "id1, id2"),
 		)
 
@@ -685,14 +685,14 @@ func Test_cmdReplicate_copyChangeTracking(t *testing.T) {
 		time.Sleep(100 * time.Millisecond)
 
 		assert.Equal(t,
-			[]rowdata{
+			[]rowData{
 				{"id": int64(1)},
 			},
 			getAllData(t, dstDB.db, tableInfo{schema: "s1", name: "t1"}, "id"),
 		)
 
 		assert.Equal(t,
-			[]rowdata{
+			[]rowData{
 				{"id": int64(2), "val": "lorem"},
 				{"id": int64(4), "val": "dolor"},
 			},
@@ -700,7 +700,7 @@ func Test_cmdReplicate_copyChangeTracking(t *testing.T) {
 		)
 
 		assert.Equal(t,
-			[]rowdata{
+			[]rowData{
 				{
 					"id1":  []byte("1a2b3c4d-5a6b-7c8d-9910-111213141516"),
 					"id2":  int64(1),
@@ -764,7 +764,7 @@ func Test_cmdReplicate_copyChangeTracking(t *testing.T) {
 		srcDB.db.QueryRowx(`SELECT CHANGE_TRACKING_CURRENT_VERSION()`).Scan(&ver)
 
 		assert.Equal(t,
-			[]rowdata{
+			[]rowData{
 				{"schema_name": "s1", "table_name": "t1", "initial_copy_done": int64(0), "initial_copy_last_id": nil, "change_tracking_last_version": ver},
 				{"schema_name": "s1", "table_name": "t2", "initial_copy_done": int64(0), "initial_copy_last_id": nil, "change_tracking_last_version": ver},
 				{"schema_name": "s2", "table_name": "t3", "initial_copy_done": int64(0), "initial_copy_last_id": nil, "change_tracking_last_version": ver},
@@ -863,7 +863,7 @@ func Test_dstTable(t *testing.T) {
 	assert.Equal(t, tableInfo{schema: "test", name: "table1"}, dstTable(tableInfo{schema: "test", name: "table1"}))
 }
 
-func getAllData(t *testing.T, db *sqlx.DB, table tableInfo, order string) []rowdata {
+func getAllData(t *testing.T, db *sqlx.DB, table tableInfo, order string) []rowData {
 	t.Helper()
 
 	tableName := table.name
@@ -879,9 +879,9 @@ func getAllData(t *testing.T, db *sqlx.DB, table tableInfo, order string) []rowd
 		assert.FailNow(t, "error reading db data")
 	}
 
-	ret := []rowdata{}
+	ret := []rowData{}
 	for rows.Next() {
-		row := rowdata{}
+		row := rowData{}
 		if !assert.NoError(t, rows.MapScan(row)) {
 			assert.FailNow(t, "error scanning row")
 		}
@@ -898,7 +898,7 @@ func getAllData(t *testing.T, db *sqlx.DB, table tableInfo, order string) []rowd
 	return ret
 }
 
-func openTestDB(t *testing.T) (*sourceDB, *destinationDB, *metaDB) {
+func openTestDB(t *testing.T) (*mssql, *postgres, *sqlite) {
 	t.Helper()
 
 	cfg, err := loadConfig("mssql2pg_test.json")
