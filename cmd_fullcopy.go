@@ -79,6 +79,7 @@ func (cmd *cmdFullCopy) truncateAndCopy(ctx context.Context, t tableInfo) error 
 		wg             = &sync.WaitGroup{}
 	)
 	wg.Add(2)
+	defer cancel()
 
 	srcCount, _ := cmd.srcDB.getRowCount(t)
 	bar := progressbar.NewOptions64(srcCount,

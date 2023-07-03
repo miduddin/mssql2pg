@@ -220,6 +220,7 @@ func (cmd *cmdReplicate) copyInitial(ctx context.Context, t tableInfo) error {
 		wg             = &sync.WaitGroup{}
 	)
 	wg.Add(2)
+	defer cancel()
 
 	go func() {
 		if err := cmd.srcDB.readRowsWithPK(newCtx, t, lastCopiedID, rowChan); err != nil {
@@ -354,6 +355,7 @@ func (cmd *cmdReplicate) copyCurrentChangeTracking(ctx context.Context, t tableI
 		wg             = &sync.WaitGroup{}
 	)
 	wg.Add(2)
+	defer cancel()
 
 	go func() {
 		n, err := cmd.srcDB.readRowChanges(newCtx, t, ver, rowChan)
