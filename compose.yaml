@@ -12,7 +12,7 @@ services:
       - mssql:/var/opt/mssql
 
   pg:
-    image: docker.io/postgres:13
+    image: docker.io/postgres:13-alpine
     ports:
       - 5432:5432
     environment:
